@@ -1,5 +1,114 @@
 # *Endpoints* e *Responses* da API
 
+## 🔐 Autenticação
+
+A API utiliza **Laravel Sanctum** para autenticação baseada em tokens. Para acessar endpoints protegidos, você deve incluir o token de acesso no cabeçalho `Authorization`.
+
+### Obtendo um Token de API
+
+**POST** `/api/v1/auth/token`
+
+Cria um token de API usando email e senha do usuário.
+
+**Parâmetros:**
+- `email` (obrigatório): Email do usuário
+- `password` (obrigatório): Senha do usuário  
+- `token_name` (opcional): Nome personalizado para o token (padrão: "API Token")
+
+**Exemplo de Request:**
+```json
+POST /api/v1/auth/token
+Content-Type: application/json
+
+{
+    "email": "usuario@usp.br",
+    "password": "senha123",
+    "token_name": "Token de Integração"
+}
+```
+
+**Exemplo de Response (201 Created):**
+```json
+{
+    "message": "Token criado com sucesso",
+    "data": {
+        "token": "1|A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0",
+        "token_name": "Token de Integração",
+        "user": {
+            "id": 123,
+            "name": "João da Silva",
+            "email": "usuario@usp.br"
+        }
+    }
+}
+```
+
+**Errors:**
+- `422`: Credenciais inválidas ou campos obrigatórios ausentes
+- `429`: Rate limiting (máximo 5 tentativas por minuto)
+
+### Usando o Token de API
+
+Include o token no cabeçalho `Authorization` com o prefixo `Bearer`:
+
+```http
+GET /api/v1/auth/user
+Authorization: Bearer 1|A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0
+```
+
+### Endpoints de Autenticação
+
+**GET** `/api/v1/auth/user` *(protegido)*
+Retorna informações do usuário autenticado.
+
+**Exemplo de Response:**
+```json
+{
+    "data": {
+        "id": 123,
+        "name": "João da Silva",
+        "email": "usuario@usp.br",
+        "roles": ["admin"],
+        "permissions": ["gerenciar_reservas", "aprovar_reservas"]
+    }
+}
+```
+
+**GET** `/api/v1/auth/tokens` *(protegido)*
+Lista todos os tokens do usuário autenticado.
+
+**Exemplo de Response:**
+```json
+{
+    "data": [
+        {
+            "id": 1,
+            "name": "Token de Integração",
+            "last_used_at": "25/08/2024 14:30",
+            "created_at": "20/08/2024 09:15"
+        },
+        {
+            "id": 2,
+            "name": "API Token",
+            "last_used_at": null,
+            "created_at": "22/08/2024 16:45"
+        }
+    ]
+}
+```
+
+**DELETE** `/api/v1/auth/tokens/{id}` *(protegido)*
+Revoga um token específico.
+
+**DELETE** `/api/v1/auth/tokens` *(protegido)*
+Revoga todos os tokens do usuário.
+
+---
+
+## 📋 Endpoints Públicos (sem autenticação)
+
+### Salas
+
 - `/api/v1/salas`: retorna todas as salas cadastradas no sistema com suas informações.
 
 Exemplo de _response_:
