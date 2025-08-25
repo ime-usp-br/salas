@@ -14,11 +14,16 @@ class RecursoSeeder extends Seeder
      */
     public function run()
     {
-        $recurso = [
-            'nome' => 'Projetor',
+        $recursos = [
+            ['nome' => 'Térreo'],
+            ['nome' => '1º Andar'],
+            ['nome' => '2º Andar'],
+            ['nome' => 'Ar Condicionado'],
+            ['nome' => 'Vídeo Conferência'],
         ];
 
-        Recurso::create($recurso);
-        Recurso::factory(5)->create();
+        foreach ($recursos as $recurso) {
+            Recurso::create($recurso);
+        }
     }
 }

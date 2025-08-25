@@ -14,11 +14,6 @@ class UserSeeder extends Seeder
      */
     public function run()
     {
-        $user = [
-            'codpes' => 7067011,
-            'name' => Pessoa::dump(7067011)['nompes'],
-            'email' => Pessoa::emailusp(7067011),
-        ];
-        User::create($user);
+        
     }
 }

@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             CategoriaSeeder::class,
             RecursoSeeder::class,
             SalaSeeder::class,
+            RestricaoSeeder::class,
             ReservaSeeder::class
         ]);
 

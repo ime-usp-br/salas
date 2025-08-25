@@ -14,11 +14,14 @@ class CategoriaSeeder extends Seeder
      */
     public function run()
     {
-        $categoria = [
-            'nome' => 'Filosofia',
+        $categorias = [
+            ['nome' => 'Auditório'],
+            ['nome' => 'Sala Nobre'],
+            ['nome' => 'Padrão'],
         ];
 
-        Categoria::create($categoria);
-        Categoria::factory(4)->create();
+        foreach ($categorias as $categoria) {
+            Categoria::create($categoria);
+        }
     }
 }
