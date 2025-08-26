@@ -438,3 +438,97 @@ Exemplo de _response_:
     }]
 }
 ```
+
+---
+
+## 📋 Endpoints Protegidos (com autenticação)
+
+### Gestão de Reservas
+
+**PATCH** `/api/v1/reservas/{id}/approve` *(protegido)*
+
+Aprova uma reserva pendente. Apenas responsáveis pela sala ou administradores podem aprovar reservas.
+
+**Parâmetros:**
+- `{id}` (obrigatório): ID da reserva a ser aprovada
+
+**Autorização:**
+- Usuário deve ser responsável pela sala da reserva OU
+- Usuário deve ter privilégios de administrador
+
+**Exemplo de Request:**
+```http
+PATCH /api/v1/reservas/123/approve
+Authorization: Bearer 1|A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0
+```
+
+**Exemplo de Response (200 OK):**
+```json
+{
+    "message": "Reserva aprovada com sucesso.",
+    "data": {
+        "id": 123,
+        "nome": "Reunião da Diretoria",
+        "status": "aprovada",
+        "approved_by": "João Responsável",
+        "approved_at": "26/08/2024 14:30:45"
+    }
+}
+```
+
+**Errors:**
+- `401`: Token de autenticação inválido
+- `403`: Usuário não é responsável pela sala
+- `404`: Reserva não encontrada
+- `422`: Reserva não está em status pendente
+
+---
+
+**PATCH** `/api/v1/reservas/{id}/reject` *(protegido)*
+
+Rejeita uma reserva pendente. Apenas responsáveis pela sala ou administradores podem rejeitar reservas.
+
+**Parâmetros:**
+- `{id}` (obrigatório): ID da reserva a ser rejeitada
+
+**Autorização:**
+- Usuário deve ser responsável pela sala da reserva OU
+- Usuário deve ter privilégios de administrador
+
+**Exemplo de Request:**
+```http
+PATCH /api/v1/reservas/123/reject
+Authorization: Bearer 1|A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0
+```
+
+**Exemplo de Response (200 OK):**
+```json
+{
+    "message": "Reserva rejeitada com sucesso.",
+    "data": {
+        "id": 123,
+        "nome": "Reunião da Diretoria",
+        "status": "rejeitada",
+        "rejected_by": "João Responsável",
+        "rejected_at": "26/08/2024 14:30:45"
+    }
+}
+```
+
+**Errors:**
+- `401`: Token de autenticação inválido
+- `403`: Usuário não é responsável pela sala
+- `404`: Reserva não encontrada
+- `422`: Reserva não está em status pendente
+
+---
+
+### Status de Reservas
+
+As reservas no sistema podem ter os seguintes status:
+
+- **`aprovada`**: Reserva confirmada e pode ser utilizada
+- **`pendente`**: Reserva aguardando aprovação dos responsáveis da sala
+- **`rejeitada`**: Reserva negada pelos responsáveis da sala
+
+**Importante:** Apenas reservas com status `pendente` podem ser aprovadas ou rejeitadas através dos endpoints acima.

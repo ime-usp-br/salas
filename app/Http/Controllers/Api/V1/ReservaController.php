@@ -429,6 +429,212 @@ class ReservaController extends Controller
     }
 
     /**
+     * Approve a pending reservation.
+     *
+     * @param Request $request
+     * @param Reserva $reserva
+     * @return JsonResponse
+     */
+    public function approve(Request $request, Reserva $reserva): JsonResponse
+    {
+        try {
+            $user = $request->user();
+            
+            // Verify user is authenticated
+            if (!$user) {
+                return response()->json([
+                    'error' => 'Unauthorized',
+                    'message' => 'Token de autenticação inválido ou expirado.',
+                    'details' => [
+                        'type' => 'authentication_required',
+                        'code' => 'invalid_token'
+                    ]
+                ], 401);
+            }
+
+            // Check if reservation is in pending status
+            if ($reserva->status !== 'pendente') {
+                return response()->json([
+                    'error' => 'Invalid status',
+                    'message' => 'Apenas reservas pendentes podem ser aprovadas.',
+                    'details' => [
+                        'type' => 'invalid_status',
+                        'code' => 'not_pending',
+                        'current_status' => $reserva->status
+                    ]
+                ], 422);
+            }
+
+            // Check if user is responsible for the room
+            $isResponsible = $reserva->sala->responsaveis->contains('id', $user->id);
+            $isAdmin = false;
+            
+            // Check admin privileges
+            if (method_exists($user, 'hasRole')) {
+                try {
+                    $adminRoles = ['admin', 'administrator', 'superadmin', 'super-admin'];
+                    foreach ($adminRoles as $role) {
+                        if ($user->hasRole($role)) {
+                            $isAdmin = true;
+                            break;
+                        }
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Role check failed for user ' . $user->id . ': ' . $e->getMessage());
+                }
+            }
+            
+            if (!$isResponsible && !$isAdmin) {
+                return response()->json([
+                    'error' => 'Forbidden',
+                    'message' => 'Apenas responsáveis pela sala podem aprovar reservas.',
+                    'details' => [
+                        'type' => 'insufficient_permissions',
+                        'code' => 'not_room_responsible'
+                    ]
+                ], 403);
+            }
+
+            DB::beginTransaction();
+
+            // Remove automatic approval job if exists
+            $reserva->removerTarefa_AprovacaoAutomatica();
+
+            // Update status to approved
+            $reserva->update(['status' => 'aprovada']);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Reserva aprovada com sucesso.',
+                'data' => [
+                    'id' => $reserva->id,
+                    'nome' => $reserva->nome,
+                    'status' => $reserva->status,
+                    'approved_by' => $user->name,
+                    'approved_at' => now()->format('d/m/Y H:i:s')
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            Log::error('Error approving reserva: ' . $e->getMessage());
+            
+            return response()->json([
+                'error' => 'Internal server error',
+                'message' => 'Não foi possível aprovar a reserva. Tente novamente.',
+                'details' => [
+                    'type' => 'internal_error',
+                    'code' => 'approval_failed'
+                ]
+            ], 500);
+        }
+    }
+
+    /**
+     * Reject a pending reservation.
+     *
+     * @param Request $request
+     * @param Reserva $reserva
+     * @return JsonResponse
+     */
+    public function reject(Request $request, Reserva $reserva): JsonResponse
+    {
+        try {
+            $user = $request->user();
+            
+            // Verify user is authenticated
+            if (!$user) {
+                return response()->json([
+                    'error' => 'Unauthorized',
+                    'message' => 'Token de autenticação inválido ou expirado.',
+                    'details' => [
+                        'type' => 'authentication_required',
+                        'code' => 'invalid_token'
+                    ]
+                ], 401);
+            }
+
+            // Check if reservation is in pending status
+            if ($reserva->status !== 'pendente') {
+                return response()->json([
+                    'error' => 'Invalid status',
+                    'message' => 'Apenas reservas pendentes podem ser rejeitadas.',
+                    'details' => [
+                        'type' => 'invalid_status',
+                        'code' => 'not_pending',
+                        'current_status' => $reserva->status
+                    ]
+                ], 422);
+            }
+
+            // Check if user is responsible for the room
+            $isResponsible = $reserva->sala->responsaveis->contains('id', $user->id);
+            $isAdmin = false;
+            
+            // Check admin privileges
+            if (method_exists($user, 'hasRole')) {
+                try {
+                    $adminRoles = ['admin', 'administrator', 'superadmin', 'super-admin'];
+                    foreach ($adminRoles as $role) {
+                        if ($user->hasRole($role)) {
+                            $isAdmin = true;
+                            break;
+                        }
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Role check failed for user ' . $user->id . ': ' . $e->getMessage());
+                }
+            }
+            
+            if (!$isResponsible && !$isAdmin) {
+                return response()->json([
+                    'error' => 'Forbidden',
+                    'message' => 'Apenas responsáveis pela sala podem rejeitar reservas.',
+                    'details' => [
+                        'type' => 'insufficient_permissions',
+                        'code' => 'not_room_responsible'
+                    ]
+                ], 403);
+            }
+
+            DB::beginTransaction();
+
+            // Remove automatic approval job if exists
+            $reserva->removerTarefa_AprovacaoAutomatica();
+
+            // Update status to rejected
+            $reserva->update(['status' => 'rejeitada']);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Reserva rejeitada com sucesso.',
+                'data' => [
+                    'id' => $reserva->id,
+                    'nome' => $reserva->nome,
+                    'status' => $reserva->status,
+                    'rejected_by' => $user->name,
+                    'rejected_at' => now()->format('d/m/Y H:i:s')
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            Log::error('Error rejecting reserva: ' . $e->getMessage());
+            
+            return response()->json([
+                'error' => 'Internal server error',
+                'message' => 'Não foi possível rejeitar a reserva. Tente novamente.',
+                'details' => [
+                    'type' => 'internal_error',
+                    'code' => 'rejection_failed'
+                ]
+            ], 500);
+        }
+    }
+
+    /**
      * Handle responsaveis for reservations
      *
      * @param array $reservas
