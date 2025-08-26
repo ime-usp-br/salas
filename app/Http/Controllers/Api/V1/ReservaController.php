@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\StoreReservaRequest;
 use App\Http\Requests\Api\UpdateReservaRequest;
+use App\Http\Requests\Api\ApproveReservaRequest;
 use App\Http\Resources\V1\ReservaResource;
 use App\Models\Finalidade;
 use App\Models\Reserva;
@@ -431,74 +432,22 @@ class ReservaController extends Controller
     /**
      * Approve a pending reservation.
      *
-     * @param Request $request
+     * @param ApproveReservaRequest $request
      * @param Reserva $reserva
      * @return JsonResponse
      */
-    public function approve(Request $request, Reserva $reserva): JsonResponse
+    public function approve(ApproveReservaRequest $request, Reserva $reserva): JsonResponse
     {
         try {
             $user = $request->user();
             
-            // Verify user is authenticated
-            if (!$user) {
-                return response()->json([
-                    'error' => 'Unauthorized',
-                    'message' => 'Token de autenticação inválido ou expirado.',
-                    'details' => [
-                        'type' => 'authentication_required',
-                        'code' => 'invalid_token'
-                    ]
-                ], 401);
-            }
-
-            // Check if reservation is in pending status
-            if ($reserva->status !== 'pendente') {
-                return response()->json([
-                    'error' => 'Invalid status',
-                    'message' => 'Apenas reservas pendentes podem ser aprovadas.',
-                    'details' => [
-                        'type' => 'invalid_status',
-                        'code' => 'not_pending',
-                        'current_status' => $reserva->status
-                    ]
-                ], 422);
-            }
-
-            // Check if user is responsible for the room
-            $isResponsible = $reserva->sala->responsaveis->contains('id', $user->id);
-            $isAdmin = false;
-            
-            // Check admin privileges
-            if (method_exists($user, 'hasRole')) {
-                try {
-                    $adminRoles = ['admin', 'administrator', 'superadmin', 'super-admin'];
-                    foreach ($adminRoles as $role) {
-                        if ($user->hasRole($role)) {
-                            $isAdmin = true;
-                            break;
-                        }
-                    }
-                } catch (\Exception $e) {
-                    Log::warning('Role check failed for user ' . $user->id . ': ' . $e->getMessage());
-                }
-            }
-            
-            if (!$isResponsible && !$isAdmin) {
-                return response()->json([
-                    'error' => 'Forbidden',
-                    'message' => 'Apenas responsáveis pela sala podem aprovar reservas.',
-                    'details' => [
-                        'type' => 'insufficient_permissions',
-                        'code' => 'not_room_responsible'
-                    ]
-                ], 403);
-            }
-
             DB::beginTransaction();
 
             // Remove automatic approval job if exists
             $reserva->removerTarefa_AprovacaoAutomatica();
+
+            // Enhanced business validation: Check for any last-minute conflicts
+            $this->validateNoConflicts($reserva);
 
             // Update status to approved
             $reserva->update(['status' => 'aprovada']);
@@ -534,70 +483,15 @@ class ReservaController extends Controller
     /**
      * Reject a pending reservation.
      *
-     * @param Request $request
+     * @param ApproveReservaRequest $request
      * @param Reserva $reserva
      * @return JsonResponse
      */
-    public function reject(Request $request, Reserva $reserva): JsonResponse
+    public function reject(ApproveReservaRequest $request, Reserva $reserva): JsonResponse
     {
         try {
             $user = $request->user();
             
-            // Verify user is authenticated
-            if (!$user) {
-                return response()->json([
-                    'error' => 'Unauthorized',
-                    'message' => 'Token de autenticação inválido ou expirado.',
-                    'details' => [
-                        'type' => 'authentication_required',
-                        'code' => 'invalid_token'
-                    ]
-                ], 401);
-            }
-
-            // Check if reservation is in pending status
-            if ($reserva->status !== 'pendente') {
-                return response()->json([
-                    'error' => 'Invalid status',
-                    'message' => 'Apenas reservas pendentes podem ser rejeitadas.',
-                    'details' => [
-                        'type' => 'invalid_status',
-                        'code' => 'not_pending',
-                        'current_status' => $reserva->status
-                    ]
-                ], 422);
-            }
-
-            // Check if user is responsible for the room
-            $isResponsible = $reserva->sala->responsaveis->contains('id', $user->id);
-            $isAdmin = false;
-            
-            // Check admin privileges
-            if (method_exists($user, 'hasRole')) {
-                try {
-                    $adminRoles = ['admin', 'administrator', 'superadmin', 'super-admin'];
-                    foreach ($adminRoles as $role) {
-                        if ($user->hasRole($role)) {
-                            $isAdmin = true;
-                            break;
-                        }
-                    }
-                } catch (\Exception $e) {
-                    Log::warning('Role check failed for user ' . $user->id . ': ' . $e->getMessage());
-                }
-            }
-            
-            if (!$isResponsible && !$isAdmin) {
-                return response()->json([
-                    'error' => 'Forbidden',
-                    'message' => 'Apenas responsáveis pela sala podem rejeitar reservas.',
-                    'details' => [
-                        'type' => 'insufficient_permissions',
-                        'code' => 'not_room_responsible'
-                    ]
-                ], 403);
-            }
-
             DB::beginTransaction();
 
             // Remove automatic approval job if exists
@@ -704,6 +598,44 @@ class ReservaController extends Controller
             foreach ($reservas as $reserva) {
                 $reserva->responsaveis()->sync($responsaveis->pluck('id'));
             }
+        }
+    }
+
+    /**
+     * Enhanced business validation: Validate no conflicts exist before approval
+     *
+     * @param Reserva $reserva
+     * @throws \Exception
+     */
+    private function validateNoConflicts(Reserva $reserva): void
+    {
+        try {
+            // Parse reservation date
+            $reservationDate = Carbon::createFromFormat('d/m/Y', $reserva->data);
+            $reservationStart = Carbon::createFromFormat('d/m/Y H:i', $reserva->data . ' ' . $reserva->horario_inicio);
+            $reservationEnd = Carbon::createFromFormat('d/m/Y H:i', $reserva->data . ' ' . $reserva->horario_fim);
+            
+            // Check for conflicts with approved reservations
+            $conflicts = Reserva::whereDate('data', '=', $reservationDate)
+                ->where('sala_id', $reserva->sala_id)
+                ->where('status', 'aprovada')
+                ->where('id', '!=', $reserva->id)
+                ->get();
+
+            $reservationPeriod = \Carbon\CarbonPeriod::between($reservationStart, $reservationEnd);
+
+            foreach ($conflicts as $conflict) {
+                $conflictStart = Carbon::createFromFormat('d/m/Y H:i', $conflict->data . ' ' . $conflict->horario_inicio);
+                $conflictEnd = Carbon::createFromFormat('d/m/Y H:i', $conflict->data . ' ' . $conflict->horario_fim);
+                $conflictPeriod = \Carbon\CarbonPeriod::between($conflictStart, $conflictEnd);
+
+                if ($conflictPeriod->overlaps($reservationPeriod)) {
+                    throw new \Exception("Conflito detectado com a reserva '{$conflict->nome}' ({$conflict->horario_inicio} às {$conflict->horario_fim}).");
+                }
+            }
+        } catch (\Exception $e) {
+            Log::warning('Conflict validation failed: ' . $e->getMessage());
+            throw new \Exception('Não foi possível validar conflitos: ' . $e->getMessage());
         }
     }
 }

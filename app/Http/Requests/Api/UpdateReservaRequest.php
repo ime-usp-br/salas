@@ -6,6 +6,8 @@ use App\Models\Reserva;
 use App\Models\Sala;
 use App\Rules\verifyRoomAvailability;
 use App\Rules\RestricoesSalaRule;
+use App\Rules\ReservationConflictRule;
+use App\Rules\UserPermissionRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
@@ -62,10 +64,24 @@ class UpdateReservaRequest extends FormRequest
         $rules = [
             'nome' => 'sometimes|required|string|max:255',
             'descricao' => 'sometimes|nullable|string',
-            'data' => ['sometimes', 'bail', 'required', 'date_format:Y-m-d', new verifyRoomAvailability($this, $reservaId)],
+            'data' => [
+                'sometimes', 
+                'bail', 
+                'required', 
+                'date_format:Y-m-d', 
+                new verifyRoomAvailability($this, $reservaId),
+                new ReservationConflictRule($this, $reservaId)
+            ],
             'horario_inicio' => 'sometimes|required|date_format:G:i',
             'horario_fim' => 'sometimes|required|date_format:G:i|after:horario_inicio',
-            'sala_id' => ['sometimes', 'required', 'integer', Rule::in(Sala::pluck('id')->toArray()), new RestricoesSalaRule($this)],
+            'sala_id' => [
+                'sometimes', 
+                'required', 
+                'integer', 
+                Rule::in(Sala::pluck('id')->toArray()), 
+                new RestricoesSalaRule($this),
+                new UserPermissionRule($this, 'update')
+            ],
             'finalidade_id' => 'sometimes|required|integer|exists:finalidades,id',
             'tipo_responsaveis' => ['sometimes', 'required', Rule::in(['eu', 'unidade', 'externo'])],
             'responsaveis_unidade' => 'sometimes|required_if:tipo_responsaveis,unidade|nullable|array',
@@ -150,6 +166,10 @@ class UpdateReservaRequest extends FormRequest
             'repeat_days.array' => 'Os dias de repetição devem ser fornecidos como um array.',
             'repeat_days.*.integer' => 'Cada dia de repetição deve ser um número inteiro.',
             'repeat_days.*.between' => 'Os dias de repetição devem estar entre 0 (domingo) e 6 (sábado).',
+            
+            // Enhanced business validation messages
+            'sala_id.user_permission_rule' => 'Você não tem permissão para alterar reservas para salas desta categoria.',
+            'data.reservation_conflict_rule' => 'A alteração geraria conflito de horário com outras reservas.',
         ];
 
         // Add messages for extra fields

@@ -122,7 +122,11 @@ class verifyRoomAvailability implements Rule
             }
         }
         
-        $reservas = Reserva::whereDate('data', '=', $data)->where('sala_id', $this->reserva->sala_id)->get();
+        // Enhanced business validation: exclude rejected reservations from conflicts
+        $reservas = Reserva::whereDate('data', '=', $data)
+            ->where('sala_id', $this->reserva->sala_id)
+            ->where('status', '!=', 'rejeitada') // Only consider approved and pending reservations
+            ->get();
 
         // 2. Se não há reserva alguma na data e sala em questão, podemos cadastrar
         if ($reservas->isEmpty()) {
