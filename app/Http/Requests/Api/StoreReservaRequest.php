@@ -5,6 +5,8 @@ namespace App\Http\Requests\Api;
 use App\Models\Sala;
 use App\Rules\verifyRoomAvailability;
 use App\Rules\RestricoesSalaRule;
+use App\Rules\ReservationConflictRule;
+use App\Rules\UserPermissionRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
@@ -39,10 +41,21 @@ class StoreReservaRequest extends FormRequest
         $rules = [
             'nome' => 'required|string|max:255',
             'descricao' => 'nullable|string',
-            'data' => ['bail', 'required', 'date_format:Y-m-d', new verifyRoomAvailability($this, 0)],
+            'data' => [
+                'bail', 
+                'required', 
+                'date_format:Y-m-d', 
+                new verifyRoomAvailability($this, 0)
+            ],
             'horario_inicio' => 'required|date_format:G:i',
             'horario_fim' => 'required|date_format:G:i|after:horario_inicio',
-            'sala_id' => ['required', 'integer', Rule::in(Sala::pluck('id')->toArray()), new RestricoesSalaRule($this)],
+            'sala_id' => [
+                'required', 
+                'integer', 
+                Rule::in(Sala::pluck('id')->toArray()), 
+                new RestricoesSalaRule($this),
+                new UserPermissionRule($this, 'create')
+            ],
             'finalidade_id' => 'required|integer|exists:finalidades,id',
             'tipo_responsaveis' => ['required', Rule::in(['eu', 'unidade', 'externo'])],
             'responsaveis_unidade' => 'required_if:tipo_responsaveis,unidade|nullable|array',
@@ -117,6 +130,10 @@ class StoreReservaRequest extends FormRequest
             'repeat_days.array' => 'Os dias de repetição devem ser fornecidos como um array.',
             'repeat_days.*.integer' => 'Cada dia de repetição deve ser um número inteiro.',
             'repeat_days.*.between' => 'Os dias de repetição devem estar entre 0 (domingo) e 6 (sábado).',
+            
+            // Enhanced business validation messages
+            'sala_id.user_permission_rule' => 'Você não tem permissão para reservar salas desta categoria.',
+            'data.reservation_conflict_rule' => 'Conflito de horário detectado com outras reservas.',
         ];
 
         // Add messages for extra fields

@@ -154,6 +154,12 @@ class RestricoesSalaRule implements Rule
             }
         }
 
+        /* Enhanced business validation: verificar horário comercial/funcionamento */
+        if ($this->isOutsideBusinessHours()) {
+            $this->message .= "A reserva deve respeitar o horário de funcionamento da sala $sala->nome<br>";
+            $this->validationErrors++;
+        }
+
 
         if ($this->validationErrors > 0) {
             return false;
@@ -170,5 +176,27 @@ class RestricoesSalaRule implements Rule
     public function message()
     {
         return $this->message;
+    }
+
+    /**
+     * Enhanced business validation: Check if reservation is outside business hours
+     *
+     * @return bool
+     */
+    private function isOutsideBusinessHours()
+    {
+        // Basic business hours validation (8:00 - 22:00)
+        // This can be enhanced to be configurable per room or globally
+        try {
+            $startTime = Carbon::createFromFormat('H:i', $this->reserva->horario_inicio);
+            $endTime = Carbon::createFromFormat('H:i', $this->reserva->horario_fim);
+            
+            $businessStart = Carbon::createFromFormat('H:i', '08:00');
+            $businessEnd = Carbon::createFromFormat('H:i', '22:00');
+            
+            return $startTime->isBefore($businessStart) || $endTime->isAfter($businessEnd);
+        } catch (\Exception $e) {
+            return false; // If time parsing fails, don't block the reservation
+        }
     }
 }
