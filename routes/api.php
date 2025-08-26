@@ -42,4 +42,11 @@ Route::prefix('v1')->group(function(){
             });
         });
     });
+
+    // Endpoints protegidos para CRUD de reservas
+    Route::middleware('auth:sanctum')->group(function() {
+        Route::post('reservas', [ReservaController::class, 'store']);
+        Route::put('reservas/{reserva}', [ReservaController::class, 'update']);
+        Route::delete('reservas/{reserva}', [ReservaController::class, 'destroy']);
+    });
 });

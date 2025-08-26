@@ -41,8 +41,27 @@ class verifyRoomAvailability implements Rule
         $this->check($value);
 
         if ($this->reserva->repeat_days && $this->reserva->repeat_until) {
-            $inicio = Carbon::createFromFormat('d/m/Y', $value);
-            $fim = Carbon::createFromFormat('d/m/Y', $this->reserva->repeat_until);
+            // Parse initial date with format detection
+            try {
+                $inicio = Carbon::createFromFormat('d/m/Y', $value);
+            } catch (\Exception $e) {
+                try {
+                    $inicio = Carbon::createFromFormat('Y-m-d', $value);
+                } catch (\Exception $e2) {
+                    $inicio = Carbon::parse($value);
+                }
+            }
+            
+            // Parse repeat_until date
+            try {
+                $fim = Carbon::createFromFormat('d/m/Y', $this->reserva->repeat_until);
+            } catch (\Exception $e) {
+                try {
+                    $fim = Carbon::createFromFormat('Y-m-d', $this->reserva->repeat_until);
+                } catch (\Exception $e2) {
+                    $fim = Carbon::parse($this->reserva->repeat_until);
+                }
+            }
 
             // array (objeto) com todos os dias entre as datas
             $period = CarbonPeriod::between($inicio, $fim);
@@ -50,7 +69,7 @@ class verifyRoomAvailability implements Rule
             foreach ($period as $date) {
                 // Vamos passar por todos dias, mas só validar e criar a reserva nos dias da semana marcados em repeat_days
                 if (in_array($date->dayOfWeek, $this->reserva->repeat_days)) {
-                    $this->check($date->format('d/m/Y'));
+                    $this->check($date->format('Y-m-d')); // Use Y-m-d format for consistency
                     $this->quantidade_de_reservas++;
                 }
             }
@@ -89,7 +108,20 @@ class verifyRoomAvailability implements Rule
         }
 
         // 1. Vamos pegar as reservas que existem para o mesmo dia e mesmo horário
-        $data = Carbon::createFromFormat('d/m/Y', $day);
+        // Try to parse different date formats
+        try {
+            // First try d/m/Y format (traditional format)
+            $data = Carbon::createFromFormat('d/m/Y', $day);
+        } catch (\Exception $e) {
+            try {
+                // Then try Y-m-d format (API format)
+                $data = Carbon::createFromFormat('Y-m-d', $day);
+            } catch (\Exception $e2) {
+                // If both fail, try parsing as a generic date
+                $data = Carbon::parse($day);
+            }
+        }
+        
         $reservas = Reserva::whereDate('data', '=', $data)->where('sala_id', $this->reserva->sala_id)->get();
 
         // 2. Se não há reserva alguma na data e sala em questão, podemos cadastrar
@@ -98,8 +130,10 @@ class verifyRoomAvailability implements Rule
         }
 
         // 3. Se há conflitos vamos montar a string $conflicts indicando-os
-        $inicio = Carbon::createFromFormat('d/m/Y H:i', $day.' '.$this->reserva->horario_inicio);
-        $fim = Carbon::createFromFormat('d/m/Y H:i', $day.' '.$this->reserva->horario_fim);
+        // Use the same data format detection for time creation
+        $dayFormatted = $data->format('d/m/Y');
+        $inicio = Carbon::createFromFormat('d/m/Y H:i', $dayFormatted.' '.$this->reserva->horario_inicio);
+        $fim = Carbon::createFromFormat('d/m/Y H:i', $dayFormatted.' '.$this->reserva->horario_fim);
 
         $desejado = CarbonPeriod::between($inicio, $fim);
 
