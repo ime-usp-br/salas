@@ -32,6 +32,37 @@ class AuthServiceProvider extends ServiceProvider
             return true;
         });
 
+        /**
+         * Check if user has admin privileges
+         */
+        Gate::define('admin', function ($user) {
+            // Check for admin role using Spatie Permissions
+            if (method_exists($user, 'hasRole')) {
+                try {
+                    $adminRoles = ['admin', 'administrator', 'superadmin', 'super-admin'];
+                    foreach ($adminRoles as $role) {
+                        if ($user->hasRole($role)) {
+                            return true;
+                        }
+                    }
+                } catch (\Exception $e) {
+                    // If role checking fails, check permissions instead
+                    try {
+                        $adminPermissions = ['admin', 'administrator', 'manage-all'];
+                        foreach ($adminPermissions as $permission) {
+                            if ($user->hasPermissionTo($permission, 'senhaunica')) {
+                                return true;
+                            }
+                        }
+                    } catch (\Exception $e2) {
+                        // If both role and permission checking fail, assume no admin access
+                        return false;
+                    }
+                }
+            }
+            return false;
+        });
+
         /** 
          * As pessoas só podem editar e excluir reservas feitas por elas mesma
          **/

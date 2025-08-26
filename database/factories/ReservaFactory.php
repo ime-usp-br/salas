@@ -26,7 +26,7 @@ class ReservaFactory extends Factory
 
         return [
             'nome' => $this->faker->word(),
-            'data' => $this->faker->date($format = 'd/m/Y'),
+            'data' => $this->faker->date('d/m/Y'),
             'horario_inicio' => $this->faker->time($format = 'H:i'),
             'horario_fim' => $this->faker->time($format = 'H:i'),
             'finalidade_id' => $this->faker->randomElement($finalidades_ids),

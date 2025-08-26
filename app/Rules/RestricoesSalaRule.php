@@ -33,7 +33,12 @@ class RestricoesSalaRule implements Rule
         // Inicializa o repeatUntil com a data definida pelo usuário, se for null ou estiver com o formato errado de data atribue a data corrente.
         if (isset($this->reserva->repeat_until)) {
             try {
-                $this->repeatUntil = Carbon::createFromFormat('d/m/Y', $this->reserva->repeat_until);
+                // Try API format (Y-m-d) first, then web format (d/m/Y)
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->reserva->repeat_until)) {
+                    $this->repeatUntil = Carbon::createFromFormat('Y-m-d', $this->reserva->repeat_until);
+                } else {
+                    $this->repeatUntil = Carbon::createFromFormat('d/m/Y', $this->reserva->repeat_until);
+                }
             } catch (\Throwable $th) {
                 $this->repeatUntil = Carbon::now(); 
             }
@@ -67,18 +72,27 @@ class RestricoesSalaRule implements Rule
 
         
         /* respeita a antecedência mínima */
-        if ($sala->restricao->dias_antecedencia > 0 && $sala->restricao->dias_antecedencia > (Carbon::now()->diffInDays(Carbon::createFromFormat('d/m/Y', $this->reserva->data)->format('Y-m-d'), false))) {
-            $this->message .= "As reservas na sala $sala->nome precisam ser solicitadas com até " . $sala->restricao->dias_antecedencia . " dias de antecedência<br>";
-            $this->validationErrors++;
+        if ($sala->restricao->dias_antecedencia > 0) {
+            // Parse data in correct format
+            $dataReserva = preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->reserva->data) 
+                ? Carbon::createFromFormat('Y-m-d', $this->reserva->data)
+                : Carbon::createFromFormat('d/m/Y', $this->reserva->data);
+            
+            if ($sala->restricao->dias_antecedencia > (Carbon::now()->diffInDays($dataReserva->format('Y-m-d'), false))) {
+                $this->message .= "As reservas na sala $sala->nome precisam ser solicitadas com até " . $sala->restricao->dias_antecedencia . " dias de antecedência<br>";
+                $this->validationErrors++;
+            }
         }
 
 
         /* verificar se a data da reserva e se a data repeat_until é antes dos dia limite dinamicamente calculado */
         if ($sala->restricao->tipo_restricao === 'AUTO') {
-
-            $dataReserva = Carbon::createFromFormat('d/m/Y', $this->reserva->data)->startOfDay();
+            // Parse data in correct format
+            $dataReserva = preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->reserva->data) 
+                ? Carbon::createFromFormat('Y-m-d', $this->reserva->data)->startOfDay()
+                : Carbon::createFromFormat('d/m/Y', $this->reserva->data)->startOfDay();
+            
             $dataLimite = Carbon::now()->addDays($sala->restricao->dias_limite);
-
             
             if ($dataReserva->isAfter($dataLimite) || $this->repeatUntil->isAfter($dataLimite)) {
                 $this->message .= "A sala $sala->nome aceita reservas somente até o dia " . Carbon::parse($dataLimite)->format('d/m/Y') . "<br>";
@@ -88,8 +102,10 @@ class RestricoesSalaRule implements Rule
 
         /* verificar se a data da reserva e se a data repeat_until  é antes da data limite estabelecida */
         if ($sala->restricao->tipo_restricao === 'FIXA') {
-
-            $dataReserva = Carbon::createFromFormat('d/m/Y', $this->reserva->data)->startOfDay();
+            // Parse data in correct format
+            $dataReserva = preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->reserva->data) 
+                ? Carbon::createFromFormat('Y-m-d', $this->reserva->data)->startOfDay()
+                : Carbon::createFromFormat('d/m/Y', $this->reserva->data)->startOfDay();
 
             if ($dataReserva->isAfter($sala->restricao->data_limite) || $this->repeatUntil->isAfter($sala->restricao->data_limite) ) {
                 $this->message .= "A sala $sala->nome aceita reservas somente até o dia " . Carbon::parse($sala->restricao->data_limite)->format('d/m/Y') . "<br>";
@@ -101,8 +117,11 @@ class RestricoesSalaRule implements Rule
         if ($sala->restricao->tipo_restricao === 'PERIODO_LETIVO') {
 
             $periodo = PeriodoLetivo::find($sala->restricao->periodo_letivo_id);
-
-            $dataReserva = Carbon::createFromFormat('d/m/Y', $this->reserva->data)->startOfDay();
+            
+            // Parse data in correct format
+            $dataReserva = preg_match('/^\d{4}-\d{2}-\d{2}$/', $this->reserva->data) 
+                ? Carbon::createFromFormat('Y-m-d', $this->reserva->data)->startOfDay()
+                : Carbon::createFromFormat('d/m/Y', $this->reserva->data)->startOfDay();
 
             if (!$dataReserva->between($periodo->data_inicio_reservas, $periodo->data_fim_reservas) || $this->repeatUntil->isAfter($periodo->data_fim_reservas)) {
                 $this->message .= "A sala $sala->nome aceita reservas somente entre os dias " . Carbon::parse($periodo->data_inicio_reservas)->format('d/m/Y') . " e " . Carbon::parse($periodo->data_fim_reservas)->format('d/m/Y') . "<br>";

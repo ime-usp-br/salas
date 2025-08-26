@@ -18,7 +18,14 @@ class Reserva extends Model implements Auditable
 
     public function setDataAttribute($value)
     {
-        $this->attributes['data'] = Carbon::createFromFormat('d/m/Y', $value);
+        // Support both API format (Y-m-d) and web format (d/m/Y)
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            // API format: Y-m-d - already in correct database format
+            $this->attributes['data'] = $value;
+        } else {
+            // Web format: d/m/Y - convert to database format
+            $this->attributes['data'] = Carbon::createFromFormat('d/m/Y', $value)->format('Y-m-d');
+        }
     }
 
     public function getDataAttribute($value)
@@ -31,7 +38,14 @@ class Reserva extends Model implements Auditable
     public function setRepeatUntilAttribute($value)
     {
         if ($value) {
-            $this->attributes['repeat_until'] = Carbon::createFromFormat('d/m/Y', $value);
+            // Support both API format (Y-m-d) and web format (d/m/Y)
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+                // API format: Y-m-d - already in correct database format
+                $this->attributes['repeat_until'] = $value;
+            } else {
+                // Web format: d/m/Y - convert to database format
+                $this->attributes['repeat_until'] = Carbon::createFromFormat('d/m/Y', $value)->format('Y-m-d');
+            }
         }
     }
 
@@ -44,7 +58,11 @@ class Reserva extends Model implements Auditable
 
     public function setRepeatDaysAttribute($value)
     {
-        $this->attributes['repeat_days'] = implode(',', $value);
+        if (is_array($value) && !empty($value)) {
+            $this->attributes['repeat_days'] = implode(',', $value);
+        } else {
+            $this->attributes['repeat_days'] = null;
+        }
     }
 
     public function getRepeatDaysAttribute($value)
@@ -52,6 +70,7 @@ class Reserva extends Model implements Auditable
         if ($value) {
             return explode(',', $value);
         }
+        return null;
     }
 
     /**
