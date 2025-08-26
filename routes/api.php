@@ -48,5 +48,9 @@ Route::prefix('v1')->group(function(){
         Route::post('reservas', [ReservaController::class, 'store']);
         Route::put('reservas/{reserva}', [ReservaController::class, 'update']);
         Route::delete('reservas/{reserva}', [ReservaController::class, 'destroy']);
+        
+        // Endpoints para aprovação/rejeição de reservas
+        Route::patch('reservas/{reserva}/approve', [ReservaController::class, 'approve']);
+        Route::patch('reservas/{reserva}/reject', [ReservaController::class, 'reject']);
     });
 });
