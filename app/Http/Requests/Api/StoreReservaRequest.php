@@ -62,8 +62,47 @@ class StoreReservaRequest extends FormRequest
             'responsaveis_unidade.*' => 'integer|min:1',
             'responsaveis_externo' => 'required_if:tipo_responsaveis,externo|nullable|array',
             'responsaveis_externo.*' => 'string|max:255',
-            'repeat_until' => ['required_with:repeat_days', 'nullable', 'date_format:Y-m-d', 'after_or_equal:data'],
-            'repeat_days' => 'nullable|array',
+            'repeat_until' => [
+                'required_with:repeat_days', 
+                'nullable', 
+                'date_format:Y-m-d', 
+                'after_or_equal:data',
+                function ($attribute, $value, $fail) {
+                    if ($value && $this->input('data')) {
+                        try {
+                            $startDate = Carbon::createFromFormat('Y-m-d', $this->input('data'));
+                            $endDate = Carbon::createFromFormat('Y-m-d', $value);
+                            
+                            // Maximum 6 months recurrence period
+                            $monthsDiff = $startDate->diffInMonths($endDate);
+                            if ($monthsDiff > 6) {
+                                $fail('O período de recorrência não pode exceder 6 meses.');
+                                return;
+                            }
+                            
+                            // Maximum 100 instances to prevent system overload
+                            if ($this->input('repeat_days') && is_array($this->input('repeat_days'))) {
+                                $daysCount = count($this->input('repeat_days'));
+                                $weeks = $startDate->diffInWeeks($endDate);
+                                $estimatedInstances = $daysCount * ($weeks + 1); // +1 to include both start and end weeks
+                                
+                                if ($estimatedInstances > 100) {
+                                    $fail('O padrão de recorrência resultaria em mais de 100 reservas. Reduza o período ou os dias da semana.');
+                                    return;
+                                }
+                            }
+                        } catch (\Exception $e) {
+                            $fail('Erro ao validar período de recorrência.');
+                        }
+                    }
+                }
+            ],
+            'repeat_days' => [
+                'nullable',
+                'array',
+                'min:1',
+                'max:7'
+            ],
             'repeat_days.*' => 'integer|between:0,6',
         ];
 
@@ -130,6 +169,7 @@ class StoreReservaRequest extends FormRequest
             'repeat_days.array' => 'Os dias de repetição devem ser fornecidos como um array.',
             'repeat_days.*.integer' => 'Cada dia de repetição deve ser um número inteiro.',
             'repeat_days.*.between' => 'Os dias de repetição devem estar entre 0 (domingo) e 6 (sábado).',
+            'repeat_days.max' => 'Não é possível repetir em mais de 7 dias por semana.',
             
             // Enhanced business validation messages
             'sala_id.user_permission_rule' => 'Você não tem permissão para reservar salas desta categoria.',
@@ -163,8 +203,8 @@ class StoreReservaRequest extends FormRequest
             foreach ($this->repeat_days as $day) {
                 if (is_string($day) && isset($dayMap[strtolower($day)])) {
                     $convertedDays[] = $dayMap[strtolower($day)];
-                } elseif (is_numeric($day) && $day >= 0 && $day <= 6) {
-                    $convertedDays[] = (int) $day;
+                } elseif (is_numeric($day)) {
+                    $convertedDays[] = (int) $day; // Let validation handle range checking
                 }
             }
             
