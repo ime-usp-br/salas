@@ -168,22 +168,50 @@ class ReservaController extends Controller
 
             DB::commit();
 
+            $isRecurrent = count($reservas_created) > 1;
+            $firstReserva = $reservas_created[0];
+
             $response_data = [
                 'data' => [
-                    'id' => $reservas_created[0]->id,
-                    'nome' => $reservas_created[0]->nome,
-                    'sala' => $reservas_created[0]->sala->nome,
-                    'data' => $reservas_created[0]->data,
-                    'horario_inicio' => $reservas_created[0]->horario_inicio,
-                    'horario_fim' => $reservas_created[0]->horario_fim,
-                    'status' => $reservas_created[0]->status,
+                    'id' => $firstReserva->id,
+                    'nome' => $firstReserva->nome,
+                    'descricao' => $firstReserva->descricao,
+                    'sala' => [
+                        'id' => $firstReserva->sala->id,
+                        'nome' => $firstReserva->sala->nome
+                    ],
+                    'finalidade' => [
+                        'id' => $firstReserva->finalidade->id,
+                        'nome' => $firstReserva->finalidade->nome
+                    ],
+                    'data' => $firstReserva->data,
+                    'horario_inicio' => $firstReserva->horario_inicio,
+                    'horario_fim' => $firstReserva->horario_fim,
+                    'status' => $firstReserva->status,
+                    'user_id' => $firstReserva->user_id,
+                    'created_at' => $firstReserva->created_at->format('Y-m-d H:i:s'),
+                    'recurrent' => $isRecurrent,
                     'instances_created' => count($reservas_created),
+                ],
+                'meta' => [
+                    'total_reservations' => count($reservas_created),
+                    'recurring_series' => $isRecurrent,
+                    'success' => true
                 ]
             ];
 
-            if (count($reservas_created) > 1) {
+            if ($isRecurrent) {
                 $response_data['data']['parent_id'] = $parent_id;
-                $response_data['data']['recurrent'] = true;
+                $response_data['data']['recurring_details'] = [
+                    'repeat_days' => $validatedData['repeat_days'] ?? null,
+                    'repeat_until' => $validatedData['repeat_until'] ?? null,
+                    'first_date' => $firstReserva->data,
+                    'last_date' => end($reservas_created)->data,
+                ];
+                $response_data['meta']['date_range'] = [
+                    'from' => $firstReserva->data,
+                    'to' => end($reservas_created)->data
+                ];
             }
 
             return response()->json($response_data, 201);
@@ -392,18 +420,39 @@ class ReservaController extends Controller
             DB::beginTransaction();
 
             $purge = $request->query('purge', false);
+            $purgeFromDate = $request->query('purge_from_date');
             $reservas_deleted = [];
 
             if ($purge && $reserva->parent_id) {
-                // Delete all related recurring reservations
-                $related_reservas = Reserva::where('parent_id', $reserva->parent_id)->get();
+                // Delete all or partial recurring reservations
+                $query = Reserva::where('parent_id', $reserva->parent_id);
+                
+                if ($purgeFromDate) {
+                    // Partial purge: delete from specific date onwards
+                    try {
+                        $fromDate = Carbon::createFromFormat('Y-m-d', $purgeFromDate);
+                        $query->whereDate('data', '>=', $fromDate);
+                    } catch (\Exception $e) {
+                        return response()->json([
+                            'error' => 'Validation failed',
+                            'message' => 'Data de início do purge inválida. Use formato Y-m-d.',
+                            'details' => [
+                                'type' => 'invalid_purge_date_format',
+                                'code' => 'validation_error'
+                            ]
+                        ], 422);
+                    }
+                }
+                
+                $related_reservas = $query->get();
                 
                 foreach ($related_reservas as $rel_reserva) {
                     $rel_reserva->removerTarefa_AprovacaoAutomatica();
                     $reservas_deleted[] = [
                         'id' => $rel_reserva->id,
                         'nome' => $rel_reserva->nome,
-                        'data' => $rel_reserva->data
+                        'data' => $rel_reserva->data,
+                        'status' => $rel_reserva->status
                     ];
                     $rel_reserva->delete();
                 }
@@ -413,20 +462,33 @@ class ReservaController extends Controller
                 $reservas_deleted[] = [
                     'id' => $reserva->id,
                     'nome' => $reserva->nome,
-                    'data' => $reserva->data
+                    'data' => $reserva->data,
+                    'status' => $reserva->status
                 ];
                 $reserva->delete();
             }
 
             DB::commit();
 
-            return response()->json([
+            $response = [
                 'message' => 'Reserva(s) cancelada(s) com sucesso.',
                 'data' => [
                     'deleted_count' => count($reservas_deleted),
-                    'deleted_reservas' => $reservas_deleted
+                    'deleted_reservas' => $reservas_deleted,
+                    'operation_type' => $purge ? 'series_deletion' : 'single_deletion'
+                ],
+                'meta' => [
+                    'purge_applied' => $purge,
+                    'partial_purge' => $purge && $purgeFromDate ? true : false,
+                    'success' => true
                 ]
-            ]);
+            ];
+
+            if ($purgeFromDate && $purge) {
+                $response['meta']['purge_from_date'] = $purgeFromDate;
+            }
+
+            return response()->json($response);
 
         } catch (\Illuminate\Database\QueryException $e) {
             DB::rollback();

@@ -666,4 +666,265 @@ class ReservasApiTest extends TestCase
                 ]
             ]);
     }
+
+    /** @test */
+    public function test_recurrent_reservation_validation_maximum_period()
+    {
+        Sanctum::actingAs($this->user);
+
+        $startDate = Carbon::tomorrow()->format('Y-m-d');
+        $endDate = Carbon::tomorrow()->addMonths(8)->format('Y-m-d'); // 8 months > 6 months limit
+
+        $response = $this->postJson('/api/v1/reservas', [
+            'nome' => 'Reserva Recorrente Longa',
+            'data' => $startDate,
+            'horario_inicio' => '14:00',
+            'horario_fim' => '16:00',
+            'sala_id' => $this->sala->id,
+            'finalidade_id' => $this->finalidade->id,
+            'tipo_responsaveis' => 'eu',
+            'repeat_days' => [1, 3, 5],
+            'repeat_until' => $endDate
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['repeat_until']);
+    }
+
+    /** @test */
+    public function test_recurrent_reservation_validation_too_many_instances()
+    {
+        Sanctum::actingAs($this->user);
+
+        $startDate = Carbon::tomorrow()->format('Y-m-d');
+        $endDate = Carbon::tomorrow()->addMonths(5)->format('Y-m-d'); // 5 months with daily repeat = >100 instances
+
+        $response = $this->postJson('/api/v1/reservas', [
+            'nome' => 'Reserva Recorrente Excessiva',
+            'data' => $startDate,
+            'horario_inicio' => '09:00',
+            'horario_fim' => '10:00',
+            'sala_id' => $this->sala->id,
+            'finalidade_id' => $this->finalidade->id,
+            'tipo_responsaveis' => 'eu',
+            'repeat_days' => [0, 1, 2, 3, 4, 5, 6], // Daily
+            'repeat_until' => $endDate
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['repeat_until']);
+    }
+
+    /** @test */
+    public function test_recurrent_reservation_validation_invalid_repeat_days()
+    {
+        Sanctum::actingAs($this->user);
+
+        $response = $this->postJson('/api/v1/reservas', [
+            'nome' => 'Reserva com Dias Inválidos',
+            'data' => Carbon::tomorrow()->format('Y-m-d'),
+            'horario_inicio' => '14:00',
+            'horario_fim' => '16:00',
+            'sala_id' => $this->sala->id,
+            'finalidade_id' => $this->finalidade->id,
+            'tipo_responsaveis' => 'eu',
+            'repeat_days' => [0, 1, 2, 3, 4, 5, 6, 7], // 8 days > 7 limit
+            'repeat_until' => Carbon::tomorrow()->addWeeks(4)->format('Y-m-d')
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['repeat_days']);
+    }
+
+    /** @test */
+    public function test_enhanced_recurring_reservation_response_format()
+    {
+        Sanctum::actingAs($this->user);
+
+        $reservaData = [
+            'nome' => 'Reserva Semanal',
+            'descricao' => 'Reunião de equipe semanal',
+            'data' => Carbon::tomorrow()->format('Y-m-d'),
+            'horario_inicio' => '15:00',
+            'horario_fim' => '16:00',
+            'sala_id' => $this->sala->id,
+            'finalidade_id' => $this->finalidade->id,
+            'tipo_responsaveis' => 'eu',
+            'repeat_days' => [1, 3], // Monday, Wednesday
+            'repeat_until' => Carbon::tomorrow()->addWeeks(2)->format('Y-m-d')
+        ];
+
+        $response = $this->postJson('/api/v1/reservas', $reservaData);
+
+        $response->assertStatus(201)
+            ->assertJsonStructure([
+                'data' => [
+                    'id',
+                    'nome',
+                    'descricao',
+                    'sala' => ['id', 'nome'],
+                    'finalidade' => ['id', 'nome'],
+                    'data',
+                    'horario_inicio',
+                    'horario_fim',
+                    'status',
+                    'user_id',
+                    'created_at',
+                    'recurrent',
+                    'instances_created',
+                    'parent_id',
+                    'recurring_details' => [
+                        'repeat_days',
+                        'repeat_until',
+                        'first_date',
+                        'last_date'
+                    ]
+                ],
+                'meta' => [
+                    'total_reservations',
+                    'recurring_series',
+                    'success',
+                    'date_range' => ['from', 'to']
+                ]
+            ])
+            ->assertJson([
+                'data' => [
+                    'recurrent' => true,
+                ],
+                'meta' => [
+                    'recurring_series' => true,
+                    'success' => true
+                ]
+            ]);
+    }
+
+    /** @test */
+    public function test_purge_with_date_range_partial_deletion()
+    {
+        Sanctum::actingAs($this->user);
+
+        // Create recurring reservations
+        $parentReserva = Reserva::factory()->create([
+            'user_id' => $this->user->id,
+            'sala_id' => $this->sala->id,
+            'finalidade_id' => $this->finalidade->id,
+            'data' => Carbon::tomorrow()->format('Y-m-d')
+        ]);
+        $parentReserva->update(['parent_id' => $parentReserva->id]);
+
+        $childReserva1 = Reserva::factory()->create([
+            'user_id' => $this->user->id,
+            'sala_id' => $this->sala->id,
+            'finalidade_id' => $this->finalidade->id,
+            'parent_id' => $parentReserva->id,
+            'data' => Carbon::tomorrow()->addDays(3)->format('Y-m-d')
+        ]);
+
+        $childReserva2 = Reserva::factory()->create([
+            'user_id' => $this->user->id,
+            'sala_id' => $this->sala->id,
+            'finalidade_id' => $this->finalidade->id,
+            'parent_id' => $parentReserva->id,
+            'data' => Carbon::tomorrow()->addDays(7)->format('Y-m-d')
+        ]);
+
+        $purgeFromDate = Carbon::tomorrow()->addDays(5)->format('Y-m-d');
+
+        $response = $this->deleteJson("/api/v1/reservas/{$parentReserva->id}?purge=true&purge_from_date={$purgeFromDate}");
+
+        $response->assertStatus(200)
+            ->assertJsonStructure([
+                'message',
+                'data' => [
+                    'deleted_count',
+                    'deleted_reservas',
+                    'operation_type'
+                ],
+                'meta' => [
+                    'purge_applied',
+                    'partial_purge',
+                    'success',
+                    'purge_from_date'
+                ]
+            ])
+            ->assertJson([
+                'data' => [
+                    'deleted_count' => 1, // Only childReserva2 should be deleted
+                    'operation_type' => 'series_deletion'
+                ],
+                'meta' => [
+                    'purge_applied' => true,
+                    'partial_purge' => true,
+                    'purge_from_date' => $purgeFromDate
+                ]
+            ]);
+
+        // Verify correct reservations remain/deleted
+        $this->assertDatabaseHas('reservas', ['id' => $parentReserva->id]);
+        $this->assertDatabaseHas('reservas', ['id' => $childReserva1->id]);
+        $this->assertDatabaseMissing('reservas', ['id' => $childReserva2->id]);
+    }
+
+    /** @test */
+    public function test_purge_from_date_validation_error()
+    {
+        Sanctum::actingAs($this->user);
+
+        $parentReserva = Reserva::factory()->create([
+            'user_id' => $this->user->id,
+            'sala_id' => $this->sala->id,
+            'finalidade_id' => $this->finalidade->id,
+            'data' => Carbon::tomorrow()->format('Y-m-d')
+        ]);
+        $parentReserva->update(['parent_id' => $parentReserva->id]);
+
+        $response = $this->deleteJson("/api/v1/reservas/{$parentReserva->id}?purge=true&purge_from_date=invalid-date");
+
+        $response->assertStatus(422)
+            ->assertJson([
+                'error' => 'Validation failed',
+                'details' => [
+                    'type' => 'invalid_purge_date_format',
+                    'code' => 'validation_error'
+                ]
+            ]);
+    }
+
+    /** @test */
+    public function test_single_reservation_response_format()
+    {
+        Sanctum::actingAs($this->user);
+
+        $reservaData = [
+            'nome' => 'Reserva Única',
+            'descricao' => 'Reunião pontual',
+            'data' => Carbon::tomorrow()->format('Y-m-d'),
+            'horario_inicio' => '10:00',
+            'horario_fim' => '11:00',
+            'sala_id' => $this->sala->id,
+            'finalidade_id' => $this->finalidade->id,
+            'tipo_responsaveis' => 'eu'
+        ];
+
+        $response = $this->postJson('/api/v1/reservas', $reservaData);
+
+        $response->assertStatus(201)
+            ->assertJson([
+                'data' => [
+                    'recurrent' => false,
+                    'instances_created' => 1
+                ],
+                'meta' => [
+                    'total_reservations' => 1,
+                    'recurring_series' => false,
+                    'success' => true
+                ]
+            ])
+            ->assertJsonMissing([
+                'data' => [
+                    'parent_id',
+                    'recurring_details'
+                ]
+            ]);
+    }
 }

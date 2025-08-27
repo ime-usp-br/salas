@@ -532,3 +532,315 @@ As reservas no sistema podem ter os seguintes status:
 - **`rejeitada`**: Reserva negada pelos responsáveis da sala
 
 **Importante:** Apenas reservas com status `pendente` podem ser aprovadas ou rejeitadas através dos endpoints acima.
+
+---
+
+## 🔄 Reservas Recorrentes (AC6)
+
+### Criação de Reservas Recorrentes
+
+**POST** `/api/v1/reservas` *(protegido)*
+
+Cria uma nova reserva ou série de reservas recorrentes no sistema.
+
+**Parâmetros Obrigatórios:**
+- `nome` (string): Título da reserva
+- `data` (string): Data inicial no formato Y-m-d (ex: 2024-09-15)
+- `horario_inicio` (string): Horário de início no formato H:i (ex: 14:00)
+- `horario_fim` (string): Horário de fim no formato H:i (ex: 16:00)
+- `sala_id` (integer): ID da sala a ser reservada
+- `finalidade_id` (integer): ID da finalidade da reserva
+- `tipo_responsaveis` (string): Tipo de responsáveis (eu, unidade, externo)
+
+**Parâmetros Opcionais:**
+- `descricao` (string): Descrição adicional da reserva
+- `responsaveis_unidade` (array): IDs dos responsáveis da unidade (obrigatório quando tipo_responsaveis = "unidade")
+- `responsaveis_externo` (array): Nomes dos responsáveis externos (obrigatório quando tipo_responsaveis = "externo")
+
+**Parâmetros de Recorrência:**
+- `repeat_days` (array): Dias da semana para repetição (0=domingo, 1=segunda, ..., 6=sábado)
+- `repeat_until` (string): Data final da recorrência no formato Y-m-d (obrigatório com repeat_days)
+
+**Validações de Recorrência:**
+- **Período Máximo**: 6 meses entre data inicial e repeat_until
+- **Máximo de Instâncias**: Máximo 100 reservas na série recorrente
+- **Dias Válidos**: repeat_days deve conter entre 1 e 7 dias da semana únicos
+- **Data Final**: repeat_until deve ser igual ou posterior à data inicial
+
+**Exemplo - Reserva Única:**
+```json
+POST /api/v1/reservas
+Authorization: Bearer 1|TOKEN
+Content-Type: application/json
+
+{
+    "nome": "Reunião de Planejamento",
+    "descricao": "Reunião mensal da equipe",
+    "data": "2024-09-15",
+    "horario_inicio": "14:00",
+    "horario_fim": "16:00",
+    "sala_id": 1,
+    "finalidade_id": 7,
+    "tipo_responsaveis": "eu"
+}
+```
+
+**Exemplo - Reserva Recorrente:**
+```json
+POST /api/v1/reservas
+Authorization: Bearer 1|TOKEN
+Content-Type: application/json
+
+{
+    "nome": "Reunião Semanal da Equipe",
+    "descricao": "Reunião recorrente às segundas e quartas",
+    "data": "2024-09-15",
+    "horario_inicio": "14:00",
+    "horario_fim": "16:00",
+    "sala_id": 1,
+    "finalidade_id": 7,
+    "tipo_responsaveis": "unidade",
+    "responsaveis_unidade": [123456, 789012],
+    "repeat_days": [1, 3],
+    "repeat_until": "2024-12-15"
+}
+```
+
+**Response - Reserva Única (201 Created):**
+```json
+{
+    "data": {
+        "id": 156,
+        "nome": "Reunião de Planejamento",
+        "descricao": "Reunião mensal da equipe",
+        "sala": {
+            "id": 1,
+            "nome": "Sala 01"
+        },
+        "finalidade": {
+            "id": 7,
+            "nome": "Reunião"
+        },
+        "data": "15/09/2024",
+        "horario_inicio": "14:00",
+        "horario_fim": "16:00",
+        "status": "aprovada",
+        "user_id": 123,
+        "created_at": "2024-08-26 10:30:45",
+        "recurrent": false,
+        "instances_created": 1
+    },
+    "meta": {
+        "total_reservations": 1,
+        "recurring_series": false,
+        "success": true
+    }
+}
+```
+
+**Response - Reserva Recorrente (201 Created):**
+```json
+{
+    "data": {
+        "id": 157,
+        "nome": "Reunião Semanal da Equipe",
+        "descricao": "Reunião recorrente às segundas e quartas",
+        "sala": {
+            "id": 1,
+            "nome": "Sala 01"
+        },
+        "finalidade": {
+            "id": 7,
+            "nome": "Reunião"
+        },
+        "data": "15/09/2024",
+        "horario_inicio": "14:00",
+        "horario_fim": "16:00",
+        "status": "aprovada",
+        "user_id": 123,
+        "created_at": "2024-08-26 10:30:45",
+        "recurrent": true,
+        "instances_created": 25,
+        "parent_id": 157,
+        "recurring_details": {
+            "repeat_days": [1, 3],
+            "repeat_until": "2024-12-15",
+            "first_date": "15/09/2024",
+            "last_date": "15/12/2024"
+        }
+    },
+    "meta": {
+        "total_reservations": 25,
+        "recurring_series": true,
+        "success": true,
+        "date_range": {
+            "from": "15/09/2024",
+            "to": "15/12/2024"
+        }
+    }
+}
+```
+
+### Exclusão de Reservas Recorrentes
+
+**DELETE** `/api/v1/reservas/{id}?purge={bool}&purge_from_date={date}` *(protegido)*
+
+Remove uma reserva ou série de reservas recorrentes do sistema.
+
+**Parâmetros de Query:**
+- `purge` (boolean, opcional): Se true, remove todas as reservas da série recorrente
+- `purge_from_date` (string, opcional): Data a partir da qual aplicar o purge (formato Y-m-d)
+
+**Autorização:**
+- Usuário deve ser o criador da reserva OU
+- Usuário deve ter privilégios de administrador
+
+**Comportamentos:**
+1. **Sem purge**: Remove apenas a reserva específica
+2. **purge=true**: Remove toda a série de reservas recorrentes
+3. **purge=true&purge_from_date=YYYY-MM-DD**: Remove reservas da série a partir da data especificada
+
+**Exemplo - Exclusão de Instância Única:**
+```http
+DELETE /api/v1/reservas/157
+Authorization: Bearer 1|TOKEN
+```
+
+**Exemplo - Exclusão de Série Completa:**
+```http
+DELETE /api/v1/reservas/157?purge=true
+Authorization: Bearer 1|TOKEN
+```
+
+**Exemplo - Exclusão Parcial da Série:**
+```http
+DELETE /api/v1/reservas/157?purge=true&purge_from_date=2024-10-15
+Authorization: Bearer 1|TOKEN
+```
+
+**Response - Exclusão Única (200 OK):**
+```json
+{
+    "message": "Reserva(s) cancelada(s) com sucesso.",
+    "data": {
+        "deleted_count": 1,
+        "deleted_reservas": [
+            {
+                "id": 157,
+                "nome": "Reunião Semanal da Equipe",
+                "data": "15/09/2024",
+                "status": "aprovada"
+            }
+        ],
+        "operation_type": "single_deletion"
+    },
+    "meta": {
+        "purge_applied": false,
+        "partial_purge": false,
+        "success": true
+    }
+}
+```
+
+**Response - Exclusão de Série (200 OK):**
+```json
+{
+    "message": "Reserva(s) cancelada(s) com sucesso.",
+    "data": {
+        "deleted_count": 25,
+        "deleted_reservas": [
+            {
+                "id": 157,
+                "nome": "Reunião Semanal da Equipe",
+                "data": "15/09/2024",
+                "status": "aprovada"
+            },
+            {
+                "id": 158,
+                "nome": "Reunião Semanal da Equipe", 
+                "data": "17/09/2024",
+                "status": "pendente"
+            }
+        ],
+        "operation_type": "series_deletion"
+    },
+    "meta": {
+        "purge_applied": true,
+        "partial_purge": false,
+        "success": true
+    }
+}
+```
+
+**Response - Exclusão Parcial (200 OK):**
+```json
+{
+    "message": "Reserva(s) cancelada(s) com sucesso.",
+    "data": {
+        "deleted_count": 12,
+        "deleted_reservas": [
+            {
+                "id": 170,
+                "nome": "Reunião Semanal da Equipe",
+                "data": "16/10/2024",
+                "status": "pendente"
+            }
+        ],
+        "operation_type": "series_deletion"
+    },
+    "meta": {
+        "purge_applied": true,
+        "partial_purge": true,
+        "success": true,
+        "purge_from_date": "2024-10-15"
+    }
+}
+```
+
+**Errors:**
+- `401`: Token de autenticação inválido
+- `403`: Usuário não pode deletar esta reserva
+- `404`: Reserva não encontrada
+- `422`: Data de início do purge inválida (quando usando purge_from_date)
+- `422`: Não é possível cancelar reservas de datas passadas (usuários não-admin)
+
+### Validações de Negócio para Recorrências
+
+**Regras de Validação:**
+1. **Período Máximo**: 6 meses entre data inicial e data final
+2. **Limite de Instâncias**: Máximo 100 reservas por série recorrente
+3. **Dias da Semana**: Entre 1 e 7 dias únicos (0=domingo, 6=sábado)
+4. **Data Final**: repeat_until deve ser igual ou posterior à data inicial
+5. **Conflitos**: Validação de conflitos para cada instância da série
+
+**Exemplos de Erros de Validação:**
+
+**Período Excessivo (422):**
+```json
+{
+    "message": "The given data was invalid.",
+    "errors": {
+        "repeat_until": ["O período de recorrência não pode exceder 6 meses."]
+    }
+}
+```
+
+**Muitas Instâncias (422):**
+```json
+{
+    "message": "The given data was invalid.",
+    "errors": {
+        "repeat_until": ["O padrão de recorrência resultaria em mais de 100 reservas. Reduza o período ou os dias da semana."]
+    }
+}
+```
+
+**Dias Inválidos (422):**
+```json
+{
+    "message": "The given data was invalid.",
+    "errors": {
+        "repeat_days": ["Não é possível repetir em mais de 7 dias por semana."]
+    }
+}
+```
