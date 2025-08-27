@@ -266,13 +266,11 @@ class AuthenticationTest extends TestCase
             ]);
         }
 
-        // A 6ª tentativa deve retornar erro de rate limiting
-        $response->assertStatus(422)
-                ->assertJsonValidationErrors(['email']);
+        // A 6ª tentativa deve retornar erro de rate limiting (429)
+        $response->assertStatus(429);
         
-        // Verifica se a mensagem contém a informação de rate limiting
-        $responseData = $response->json();
-        $this->assertStringContainsString('Muitas tentativas. Tente novamente em', $responseData['errors']['email'][0]);
+        // Verifica que o header de retry-after está presente
+        $this->assertTrue($response->headers->has('Retry-After'));
     }
 
     /** @test */

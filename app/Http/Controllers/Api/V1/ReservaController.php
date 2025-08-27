@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Traits\ApiResponseTrait;
 use App\Http\Requests\Api\StoreReservaRequest;
 use App\Http\Requests\Api\UpdateReservaRequest;
 use App\Http\Requests\Api\ApproveReservaRequest;
@@ -20,6 +21,7 @@ use Uspdev\Replicado\Pessoa;
 
 class ReservaController extends Controller
 {
+    use ApiResponseTrait;
     /**
      * Retorna todas as reservas com base nos filtros passados pelo método GET.
      * Se nenhum filtro for passado será retornado todas as reservas do dia corrente.
