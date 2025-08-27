@@ -1018,443 +1018,240 @@ Authorization: Bearer 1|TOKEN
 ```
 
 ---
+# Tratamento de Erros Padronizados e Rate Limiting - Implementação
 
-## 💡 **Casos de Uso Práticos e Melhores Práticas**
+## Resumo das Melhorias Implementadas
 
-### Caso 1: Sistema de Gestão de Eventos
-**Cenário**: Uma universidade precisa gerenciar reservas de salas para eventos acadêmicos.
+Esta implementação aprimora a API do sistema de salas com **tratamento de erros padronizado** e **rate limiting granular**, mantendo **100% de compatibilidade** com clientes existentes.
 
-```javascript
-// Fluxo completo de reserva de evento
-async function reservarEvento() {
-    // 1. Obter token de autenticação
-    const tokenResponse = await fetch('/api/v1/auth/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            email: 'organizador@universidade.edu.br',
-            password: 'senha_segura',
-            token_name: 'Sistema Eventos'
-        })
-    });
-    
-    const { token } = (await tokenResponse.json()).data;
-    const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-    };
+## 1. Sistema de Resposta Padronizada
 
-    // 2. Listar salas disponíveis
-    const salasResponse = await fetch('/api/v1/salas', { headers });
-    const salas = (await salasResponse.json()).data;
+### ApiResponseTrait (`app/Http/Traits/ApiResponseTrait.php`)
+
+Trait que fornece métodos padronizados para respostas da API:
+
+#### Métodos de Sucesso
+- `successResponse()` - Respostas de sucesso genéricas
+- `createdResponse()` - Para recursos criados (201)
+- `updatedResponse()` - Para recursos atualizados
+
+#### Métodos de Erro
+- `errorResponse()` - Erro genérico padronizado
+- `validationErrorResponse()` - Erros de validação (422)
+- `authenticationErrorResponse()` - Não autenticado (401)
+- `forbiddenErrorResponse()` - Não autorizado (403)
+- `notFoundErrorResponse()` - Não encontrado (404)
+- `rateLimitErrorResponse()` - Rate limit excedido (429)
+- `databaseErrorResponse()` - Erros de banco (500)
+- `internalServerErrorResponse()` - Erro interno (500)
+
+### Formato de Resposta
+```json
+{
+  "data": { ... },           // Para sucessos
+  "message": "string",       // Mensagem opcional
+  "meta": {                  // Metadados
+    "success": true
+  },
+  "error": "string",         // Tipo de erro
+  "details": {               // Detalhes do erro
+    "type": "error_type",
+    "code": "error_code"
+  }
+}
+```
+
+## 2. Rate Limiting Granular
+
+### Configuração por Categoria
+
+#### `auth` - Autenticação
+- **20/min** geral por IP
+- **5/min** por email/IP (ataques direcionados)
+- **50/hora** por IP (ataques sustentados)
+
+#### `api` - API Autenticada
+- **Usuários autenticados**: 100/min, 2000/hora
+- **Não autenticados**: 30/min, 500/hora
+
+#### `public` - Endpoints Públicos
+- **60/min** por IP
+- **1000/hora** por IP
+
+#### `reservations` - Reservas
+- **Usuários regulares**: 30/min, 500/hora
+- **System Integration/Bulk**: 60/min, 500/hora, 2000/dia
+- **Públicos**: 20/min, 200/hora
+
+#### `admin` - Administração
+- **30/min** por usuário
+- **300/hora** por usuário
+
+#### `uploads` - Uploads
+- **10/min** por usuário/IP
+- **100/hora** por usuário/IP
+- **500/dia** por usuário/IP
+
+#### `bulk` - Operações em Lote
+- **100/min** por usuário/IP
+- **1000/hora** por usuário/IP
+- **5000/dia** por usuário/IP
+
+### Aplicação nas Rotas
+
+```php
+// Endpoints públicos
+Route::middleware(['throttle:public'])->group(function() {
+    // Rotas públicas
+});
+
+// Autenticação
+Route::middleware(['throttle:auth'])->group(function() {
+    Route::post('token', ...);
+});
+
+// API autenticada
+Route::middleware(['auth:sanctum', 'throttle:api'])->group(function() {
+    // Rotas autenticadas
+});
+
+// Reservas
+Route::middleware(['auth:sanctum', 'throttle:reservations'])->group(function() {
+    // CRUD de reservas
+});
+
+// Admin
+Route::middleware(['throttle:admin'])->group(function() {
+    // Aprovação/rejeição
+});
+```
+
+## 3. Tratamento Global de Exceções
+
+### Handler Melhorado (`app/Exceptions/Handler.php`)
+
+- **Detecção Automática**: Identifica requests de API via `expectsJson()` ou `is('api/*')`
+- **Responses Padronizadas**: Todas as exceções retornam formato consistente
+- **Logging Aprimorado**: Context detalhado para debugging
+- **Compatibilidade**: Requests web continuam com comportamento original
+
+### Exceções Tratadas
+
+- `ValidationException` → Resposta de validação padronizada
+- `AuthenticationException` → Erro de autenticação
+- `AuthorizationException` → Erro de autorização
+- `NotFoundHttpException` → Recurso não encontrado
+- `ThrottleRequestsException` → Rate limit excedido
+- `QueryException` → Erro de banco de dados
+- `HttpException` → Erros HTTP genéricos
+- Todas as demais → Erro interno do servidor
+
+## 4. Middleware de Rate Limiting
+
+### ApiRateLimitMiddleware (`app/Http/Middleware/ApiRateLimitMiddleware.php`)
+
+Middleware customizado com:
+- **Keys Inteligentes**: Baseadas em usuário, email ou IP conforme contexto
+- **Limites Dinâmicos**: Diferentes por categoria de endpoint
+- **Headers Informativos**: `X-RateLimit-Limit` e `X-RateLimit-Remaining`
+- **Logging**: Registra tentativas de rate limit excedido
+- **Respostas Padronizadas**: Usa ApiResponseTrait
+
+## 5. Implementação Compatível
+
+### Backward Compatibility Garantida
+
+1. **Métodos Existentes**: Todos preservados e funcionais
+2. **Estruturas de Response**: Clientes existentes continuam funcionando
+3. **Rate Limiting Transparente**: Aplicado sem quebrar funcionalidade
+4. **Error Handling**: Apenas aprimora, não substitui comportamento existente
+
+### Exemplo de Migração Gradual
+
+#### Antes (mantido funcionando):
+```php
+return response()->json([
+    'error' => 'Validation failed',
+    'message' => 'Dados inválidos'
+], 422);
+```
+
+#### Depois (novo padrão recomendado):
+```php
+return $this->validationErrorResponse($errors, 'Dados inválidos');
+```
+
+## 6. Configuração e Uso
+
+### Para Novos Controllers
+```php
+use App\Http\Traits\ApiResponseTrait;
+
+class NovoController extends Controller 
+{
+    use ApiResponseTrait;
     
-    // 3. Verificar disponibilidade da sala desejada
-    const salaId = 16; // Auditório
-    const dataEvento = '2024-09-15';
-    
-    const disponibilidadeResponse = await fetch(
-        `/api/v1/salas/${salaId}/availability?data=${dataEvento}`, 
-        { headers }
-    );
-    
-    // 4. Criar reserva recorrente para série de palestras
-    const reservaResponse = await fetch('/api/v1/reservas', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-            nome: 'Semana de Ciência e Tecnologia',
-            descricao: 'Palestras diárias durante a semana acadêmica',
-            data: dataEvento,
-            horario_inicio: '19:00',
-            horario_fim: '21:00',
-            sala_id: salaId,
-            finalidade_id: 8, // Evento
-            tipo_responsaveis: 'unidade',
-            responsaveis_unidade: [123456, 789012],
-            repeat_days: [1, 2, 3, 4, 5], // Segunda a sexta
-            repeat_until: '2024-09-19'
-        })
-    });
-    
-    const reservaData = await reservaResponse.json();
-    
-    if (reservaResponse.ok) {
-        console.log(`✅ Série criada! ${reservaData.data.instances_created} reservas`);
-        return reservaData.data.parent_id;
-    } else {
-        console.error('❌ Erro na reserva:', reservaData);
-        throw new Error(reservaData.message);
+    public function store() 
+    {
+        // ... lógica
+        return $this->createdResponse($data, 'Criado com sucesso');
     }
 }
 ```
 
-### Caso 2: App Mobile para Reservas Rápidas
-**Cenário**: Aplicativo móvel que permite reservas rápidas com validações inteligentes.
+### Para Controllers Existentes
+```php
+// Adicionar gradualmente
+use App\Http\Traits\ApiResponseTrait;
 
-```swift
-// Swift iOS - Reserva com tratamento de erros
-class ReservaService {
-    private let baseURL = "https://salas.usp.br/api/v1"
-    private var authToken: String?
+class ExistingController extends Controller 
+{
+    use ApiResponseTrait;
     
-    func criarReservaRapida(nome: String, salaId: Int, inicio: String, fim: String) async throws -> ReservaResponse {
-        guard let token = authToken else {
-            throw ReservaError.naoAutenticado
-        }
-        
-        let url = URL(string: "\(baseURL)/reservas")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        
-        let reservaData = [
-            "nome": nome,
-            "data": formatter.string(from: tomorrow),
-            "horario_inicio": inicio,
-            "horario_fim": fim,
-            "sala_id": salaId,
-            "finalidade_id": 7, // Reunião
-            "tipo_responsaveis": "eu"
-        ]
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: reservaData)
-        
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            if let httpResponse = response as? HTTPURLResponse {
-                switch httpResponse.statusCode {
-                case 201:
-                    return try JSONDecoder().decode(ReservaResponse.self, from: data)
-                case 401:
-                    throw ReservaError.tokenExpirado
-                case 403:
-                    throw ReservaError.semPermissao
-                case 422:
-                    let validationError = try JSONDecoder().decode(ValidationErrorResponse.self, from: data)
-                    throw ReservaError.dadosInvalidos(validationError.errors)
-                case 429:
-                    throw ReservaError.muitasRequisicoes
-                default:
-                    throw ReservaError.erroServidor(httpResponse.statusCode)
-                }
-            }
-        } catch {
-            throw ReservaError.erroRede(error.localizedDescription)
-        }
-        
-        throw ReservaError.respostaInvalida
-    }
-}
-
-enum ReservaError: Error {
-    case naoAutenticado
-    case tokenExpirado
-    case semPermissao
-    case dadosInvalidos([String: [String]])
-    case muitasRequisicoes
-    case erroServidor(Int)
-    case erroRede(String)
-    case respostaInvalida
+    // Métodos existentes continuam funcionando
+    // Novos métodos podem usar o trait
 }
 ```
 
-### Caso 3: Dashboard de Administração
-**Cenário**: Painel administrativo para gerenciar aprovações e relatórios.
+## 7. Monitoramento e Logs
 
-```python
-# Python - Dashboard admin com relatórios
-import requests
-from datetime import datetime, timedelta
-import pandas as pd
+### Logs de Rate Limiting
+- **Tentativas Bloqueadas**: Registradas com contexto completo
+- **Informações**: IP, usuário, endpoint, user-agent
+- **Alertas**: Para padrões de abuso detectados
 
-class AdminDashboard:
-    def __init__(self, token):
-        self.base_url = "https://salas.usp.br/api/v1"
-        self.headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-    
-    def get_pending_approvals(self):
-        """Busca reservas pendentes de aprovação"""
-        try:
-            # Como não temos endpoint específico, simulamos busca por status
-            response = requests.get(
-                f"{self.base_url}/reservas/my",
-                headers=self.headers,
-                params={"status": "pendente", "per_page": 50}
-            )
-            
-            if response.status_code == 200:
-                return response.json()["data"]
-            elif response.status_code == 429:
-                print("⚠️ Rate limit atingido. Aguarde...")
-                return []
-            else:
-                print(f"❌ Erro ao buscar aprovações: {response.status_code}")
-                return []
-                
-        except requests.RequestException as e:
-            print(f"❌ Erro de rede: {e}")
-            return []
-    
-    def approve_reservation(self, reserva_id):
-        """Aprova uma reserva específica"""
-        try:
-            response = requests.patch(
-                f"{self.base_url}/reservas/{reserva_id}/approve",
-                headers=self.headers
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                print(f"✅ Reserva {reserva_id} aprovada por {data['data']['approved_by']}")
-                return True
-            elif response.status_code == 403:
-                print(f"❌ Sem permissão para aprovar reserva {reserva_id}")
-                return False
-            elif response.status_code == 422:
-                error_data = response.json()
-                print(f"❌ Não foi possível aprovar: {error_data['message']}")
-                return False
-            else:
-                print(f"❌ Erro inesperado: {response.status_code}")
-                return False
-                
-        except requests.RequestException as e:
-            print(f"❌ Erro de rede: {e}")
-            return False
-    
-    def generate_usage_report(self, days=30):
-        """Gera relatório de uso das salas"""
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=days)
-        
-        # Coleta dados dia por dia para contornar limitações da API
-        all_reservations = []
-        current_date = start_date
-        
-        while current_date <= end_date:
-            try:
-                response = requests.get(
-                    f"{self.base_url}/reservas",
-                    params={
-                        "data": current_date.strftime("%Y-%m-%d"),
-                        "per_page": 50
-                    }
-                )
-                
-                if response.status_code == 200:
-                    day_reservations = response.json()["data"]
-                    all_reservations.extend(day_reservations)
-                elif response.status_code == 429:
-                    print(f"⚠️ Rate limit - pulando {current_date}")
-                
-                current_date += timedelta(days=1)
-                
-            except requests.RequestException as e:
-                print(f"❌ Erro coletando dados de {current_date}: {e}")
-                current_date += timedelta(days=1)
-                continue
-        
-        # Análise com pandas
-        df = pd.DataFrame(all_reservations)
-        
-        if not df.empty:
-            # Relatório por sala
-            usage_by_room = df['sala'].value_counts()
-            
-            # Relatório por finalidade
-            usage_by_purpose = df['finalidade'].value_counts()
-            
-            # Horários mais utilizados
-            df['hour'] = pd.to_datetime(df['horario_inicio']).dt.hour
-            usage_by_hour = df['hour'].value_counts().sort_index()
-            
-            print(f"\n📊 Relatório de Uso - Últimos {days} dias")
-            print(f"Total de reservas: {len(df)}")
-            print(f"\n🏛️ Top 5 salas mais utilizadas:")
-            print(usage_by_room.head())
-            print(f"\n🎯 Finalidades mais comuns:")
-            print(usage_by_purpose.head())
-            print(f"\n⏰ Horários de pico:")
-            peak_hours = usage_by_hour.nlargest(3)
-            for hour, count in peak_hours.items():
-                print(f"  {hour:02d}:00 - {count} reservas")
-        
-        return df
+### Logs de Erros da API
+- **Context Rico**: Exceção, endpoint, usuário, IP
+- **Debugging**: Facilita identificação de problemas
+- **Segurança**: Não expõe informações sensíveis
 
-# Uso do dashboard
-if __name__ == "__main__":
-    # Assumindo que temos token de admin
-    admin = AdminDashboard("admin_token_here")
-    
-    # Processar aprovações pendentes
-    pending = admin.get_pending_approvals()
-    for reserva in pending:
-        print(f"📋 Reserva pendente: {reserva['nome']} - Sala {reserva['sala']}")
-        # admin.approve_reservation(reserva['id'])  # Descomente para aprovar
-    
-    # Gerar relatório mensal
-    report_df = admin.generate_usage_report(30)
-```
+## 8. Testes e Validação
 
-### Melhores Práticas de Implementação
+### Verificações Realizadas
+- ✅ Sintaxe PHP válida
+- ✅ Rotas carregadas corretamente  
+- ✅ Configuração aplicada
+- ✅ Middleware registrado
+- ✅ Compatibilidade mantida
 
-#### 1. **Gerenciamento de Token**
-```javascript
-class TokenManager {
-    constructor() {
-        this.token = localStorage.getItem('api_token');
-        this.tokenExpiry = localStorage.getItem('token_expiry');
-    }
-    
-    async ensureValidToken(credentials) {
-        if (this.isTokenExpired()) {
-            await this.refreshToken(credentials);
-        }
-        return this.token;
-    }
-    
-    isTokenExpired() {
-        if (!this.token || !this.tokenExpiry) return true;
-        return Date.now() > parseInt(this.tokenExpiry);
-    }
-    
-    async refreshToken({ email, password }) {
-        const response = await fetch('/api/v1/auth/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password, token_name: 'App Client' })
-        });
-        
-        if (response.ok) {
-            const data = await response.json();
-            this.token = data.data.token;
-            // Assumir expiração de 24h se não informado
-            this.tokenExpiry = Date.now() + (24 * 60 * 60 * 1000);
-            
-            localStorage.setItem('api_token', this.token);
-            localStorage.setItem('token_expiry', this.tokenExpiry.toString());
-        } else {
-            throw new Error('Falha na renovação do token');
-        }
-    }
-}
-```
+### Próximos Passos Recomendados
+1. **Testes Automatizados**: Implementar testes para rate limiting
+2. **Monitoramento**: Configurar alertas para rate limiting
+3. **Documentação**: Atualizar documentação da API
+4. **Treinamento**: Capacitar equipe no novo padrão
 
-#### 2. **Retry Logic com Backoff Exponencial**
-```javascript
-class APIClient {
-    constructor(tokenManager) {
-        this.tokenManager = tokenManager;
-        this.maxRetries = 3;
-    }
-    
-    async request(endpoint, options = {}, retryCount = 0) {
-        const token = await this.tokenManager.ensureValidToken();
-        
-        const response = await fetch(`/api/v1${endpoint}`, {
-            ...options,
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                ...options.headers
-            }
-        });
-        
-        // Rate limiting - retry com backoff
-        if (response.status === 429 && retryCount < this.maxRetries) {
-            const retryAfter = response.headers.get('Retry-After') || 1;
-            const delay = Math.min(1000 * Math.pow(2, retryCount), parseInt(retryAfter) * 1000);
-            
-            console.log(`Rate limited. Retrying after ${delay}ms...`);
-            await this.sleep(delay);
-            return this.request(endpoint, options, retryCount + 1);
-        }
-        
-        // Token expirado - renovar e tentar novamente
-        if (response.status === 401 && retryCount < this.maxRetries) {
-            this.tokenManager.clearToken();
-            return this.request(endpoint, options, retryCount + 1);
-        }
-        
-        return response;
-    }
-    
-    sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-}
-```
+## Conclusão
 
-#### 3. **Validação Client-Side**
-```javascript
-class ReservationValidator {
-    static validateReservation(data) {
-        const errors = {};
-        
-        // Validação de nome
-        if (!data.nome || data.nome.trim().length < 3) {
-            errors.nome = ['Nome deve ter pelo menos 3 caracteres'];
-        }
-        
-        // Validação de data
-        const reservationDate = new Date(data.data);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        if (reservationDate < today) {
-            errors.data = ['Data deve ser hoje ou no futuro'];
-        }
-        
-        // Validação de horários
-        const [startHour, startMin] = data.horario_inicio.split(':').map(Number);
-        const [endHour, endMin] = data.horario_fim.split(':').map(Number);
-        
-        const startMinutes = startHour * 60 + startMin;
-        const endMinutes = endHour * 60 + endMin;
-        
-        if (endMinutes <= startMinutes) {
-            errors.horario_fim = ['Horário de fim deve ser após o início'];
-        }
-        
-        // Validação de duração mínima (30 minutos)
-        if (endMinutes - startMinutes < 30) {
-            errors.horario_fim = ['Reserva deve ter duração mínima de 30 minutos'];
-        }
-        
-        return Object.keys(errors).length > 0 ? errors : null;
-    }
-    
-    static validateRecurringReservation(data) {
-        const errors = this.validateReservation(data) || {};
-        
-        if (data.repeat_days && data.repeat_days.length === 0) {
-            errors.repeat_days = ['Selecione pelo menos um dia da semana'];
-        }
-        
-        if (data.repeat_until) {
-            const endDate = new Date(data.repeat_until);
-            const startDate = new Date(data.data);
-            const maxDate = new Date(startDate);
-            maxDate.setMonth(maxDate.getMonth() + 6); // 6 meses máximo
-            
-            if (endDate > maxDate) {
-                errors.repeat_until = ['Período máximo de recorrência é 6 meses'];
-            }
-        }
-        
-        return Object.keys(errors).length > 0 ? errors : null;
-    }
-}
-```
+Esta implementação melhora significativamente a robustez e consistência da API, fornecendo:
+
+- 🛡️ **Proteção Contra Abuso**: Rate limiting granular e inteligente
+- 📊 **Consistência**: Respostas padronizadas em toda API  
+- 🔍 **Observabilidade**: Logs estruturados e informativos
+- 🔒 **Segurança**: Prevenção de ataques de força bruta
+- ⚡ **Performance**: Otimização de recursos do servidor
+- 🚀 **Escalabilidade**: Base sólida para crescimento futuro
+
+**Impacto**: Alto valor com zero breaking changes, garantindo evolução segura da API.
 
 ### Dicas de Performance e Otimização
 
