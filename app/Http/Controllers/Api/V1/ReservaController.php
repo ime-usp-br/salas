@@ -24,32 +24,58 @@ class ReservaController extends Controller
      * Retorna todas as reservas com base nos filtros passados pelo método GET.
      * Se nenhum filtro for passado será retornado todas as reservas do dia corrente.
      * 
-     * Três filtros estão disponíveis:
+     * Filtros disponíveis:
      * - sala        // Recebe o id da sala.
      * - finalidade  // Recebe o id da finalidade.
      * - data        // Deve estar no formato 'Y-m-d'
+     * - per_page    // Quantidade de itens por página (padrão: 15, máximo: 50)
      * 
      * @param Request $request
      * 
      * @return object
      */
     public function getReservas(Request $request) : object {
-       $data = is_null($request->input('data')) ? Carbon::now()->format('Y-m-d') : $request->input('data');
+       try {
+           $data = is_null($request->input('data')) ? Carbon::now()->format('Y-m-d') : $request->input('data');
 
-       // Convert API date format to web format for database query
-       $dataFormatted = Carbon::createFromFormat('Y-m-d', $data)->format('d/m/Y');
+           // Query base com eager loading para otimização
+           // Note: Using $data (Y-m-d format) for database query, as the 'data' column stores dates in Y-m-d format
+           $query = Reserva::with(['sala', 'finalidade', 'responsaveis', 'user'])
+               ->whereRaw('data = ?', [$data])
+               ->where('status', 'aprovada');
 
-       $reservas = Reserva::where('data', $dataFormatted)->where('status', 'aprovada')->get();
+           // Aplicar filtros
+           if (!is_null($request->input('finalidade'))) {
+               $query->where('finalidade_id', $request->input('finalidade'));
+           }
 
-       if(!is_null($request->input('finalidade'))){
-         $reservas = $reservas->where('finalidade_id', $request->input('finalidade'));
+           if (!is_null($request->input('sala'))) {
+               $query->where('sala_id', $request->input('sala'));
+           }
+
+           // Ordenação padrão por horário
+           $query->orderBy('horario_inicio');
+
+           // Configurar paginação
+           $perPage = $request->input('per_page', 15);
+           $perPage = min($perPage, 50); // Máximo 50 por página
+
+           $reservas = $query->paginate($perPage);
+
+           return ReservaResource::collection($reservas);
+
+       } catch (\Exception $e) {
+           Log::error('Error fetching reservations: ' . $e->getMessage());
+           
+           return response()->json([
+               'error' => 'Internal server error',
+               'message' => 'Erro ao buscar reservas. Tente novamente.',
+               'details' => [
+                   'type' => 'fetch_reservations_failed',
+                   'code' => 'internal_error'
+               ]
+           ], 500);
        }
-
-       if(!is_null($request->input('sala'))){
-         $reservas = $reservas->where('sala_id', $request->input('sala'));
-       }
-
-       return ReservaResource::collection($reservas);
     }
 
     /**
@@ -636,6 +662,100 @@ class ReservaController extends Controller
         } catch (\Exception $e) {
             Log::warning('Conflict validation failed: ' . $e->getMessage());
             throw new \Exception('Não foi possível validar conflitos: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Retorna as reservas do usuário autenticado.
+     *
+     * @param Request $request
+     * @return object
+     */
+    public function myReservations(Request $request): object
+    {
+        try {
+            $user = $request->user();
+            
+            // Verificar se o usuário está autenticado
+            if (!$user) {
+                return response()->json([
+                    'error' => 'Unauthorized',
+                    'message' => 'Token de autenticação inválido ou expirado.',
+                    'details' => [
+                        'type' => 'authentication_required',
+                        'code' => 'invalid_token'
+                    ]
+                ], 401);
+            }
+
+            // Query base para buscar reservas do usuário
+            $query = Reserva::with(['sala', 'finalidade', 'responsaveis'])
+                ->where('user_id', $user->id);
+
+            // Aplicar filtros opcionais
+            if ($request->has('status')) {
+                $query->where('status', $request->input('status'));
+            }
+
+            if ($request->has('data')) {
+                $data = $request->input('data');
+                try {
+                    // Use whereDate to compare with the raw database date format
+                    $dataFormatted = Carbon::createFromFormat('Y-m-d', $data);
+                    $query->whereDate('data', $dataFormatted);
+                } catch (\Exception $e) {
+                    return response()->json([
+                        'error' => 'Validation failed',
+                        'message' => 'Formato de data inválido. Use Y-m-d.',
+                        'details' => [
+                            'type' => 'invalid_date_format',
+                            'code' => 'validation_error'
+                        ]
+                    ], 422);
+                }
+            }
+
+            if ($request->has('data_inicio') && $request->has('data_fim')) {
+                try {
+                    $dataInicio = Carbon::createFromFormat('Y-m-d', $request->input('data_inicio'));
+                    $dataFim = Carbon::createFromFormat('Y-m-d', $request->input('data_fim'));
+                    
+                    $query->whereDate('data', '>=', $dataInicio)
+                          ->whereDate('data', '<=', $dataFim);
+                } catch (\Exception $e) {
+                    return response()->json([
+                        'error' => 'Validation failed',
+                        'message' => 'Formato de data inválido para período. Use Y-m-d.',
+                        'details' => [
+                            'type' => 'invalid_date_range_format',
+                            'code' => 'validation_error'
+                        ]
+                    ], 422);
+                }
+            }
+
+            // Ordenar por data e horário (mais recentes primeiro)
+            $query->orderByDesc('data')->orderByDesc('horario_inicio');
+
+            // Paginação
+            $perPage = $request->input('per_page', 15);
+            $perPage = min($perPage, 50); // Máximo 50 por página
+
+            $reservas = $query->paginate($perPage);
+
+            return ReservaResource::collection($reservas);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Error fetching user reservations: ' . $e->getMessage());
+            
+            return response()->json([
+                'error' => 'Internal server error',
+                'message' => 'Erro ao buscar suas reservas. Tente novamente.',
+                'details' => [
+                    'type' => 'fetch_user_reservations_failed',
+                    'code' => 'internal_error'
+                ]
+            ], 500);
         }
     }
 }

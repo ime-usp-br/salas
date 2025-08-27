@@ -15,6 +15,7 @@ Route::prefix('v1')->group(function(){
     Route::get('categorias/{categoria}', [CategoriaController::class, 'show']);
     Route::get('salas', [SalaController::class, 'index']);
     Route::get('salas/{sala}', [SalaController::class, 'show']);
+    Route::get('salas/{sala}/availability', [SalaController::class, 'availability']);
     Route::get('finalidades', [FinalidadeController::class, 'index']);
 
     // Endpoints de autenticação
@@ -45,6 +46,10 @@ Route::prefix('v1')->group(function(){
 
     // Endpoints protegidos para CRUD de reservas
     Route::middleware('auth:sanctum')->group(function() {
+        // Endpoints de consulta de reservas do usuário
+        Route::get('reservas/my', [ReservaController::class, 'myReservations']);
+        
+        // CRUD de reservas
         Route::post('reservas', [ReservaController::class, 'store']);
         Route::put('reservas/{reserva}', [ReservaController::class, 'update']);
         Route::delete('reservas/{reserva}', [ReservaController::class, 'destroy']);
