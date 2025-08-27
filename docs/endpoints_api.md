@@ -441,6 +441,178 @@ Exemplo de _response_:
 
 ---
 
+## 🔍 **Códigos de Erro Detalhados**
+
+### Códigos de Status HTTP
+
+| Código | Significado | Quando Ocorre | Solução |
+|--------|-------------|---------------|---------|
+| **200** | OK | Operação bem-sucedida | - |
+| **201** | Created | Recurso criado com sucesso | - |
+| **401** | Unauthorized | Token inválido/ausente | Renovar token de autenticação |
+| **403** | Forbidden | Sem permissão para a operação | Verificar permissões do usuário |
+| **404** | Not Found | Recurso não encontrado | Confirmar ID do recurso |
+| **422** | Validation Error | Dados de entrada inválidos | Corrigir dados conforme `errors` |
+| **429** | Rate Limit | Muitas requisições | Aguardar tempo especificado em `Retry-After` |
+| **500** | Server Error | Erro interno do servidor | Tentar novamente ou contatar suporte |
+
+### Estrutura Padrão de Erro
+
+Todos os erros seguem a estrutura abaixo:
+
+```json
+{
+    "error": "Tipo do erro",
+    "message": "Mensagem em português para o usuário",
+    "details": {
+        "type": "categoria_especifica_do_erro",
+        "code": "codigo_identificador",
+        "additional_info": "informações extras quando aplicável"
+    }
+}
+```
+
+### Erros Específicos da API de Reservas
+
+#### **Erros de Validação (422)**
+
+**Campos Obrigatórios:**
+```json
+{
+    "message": "The given data was invalid.",
+    "errors": {
+        "nome": ["O campo nome é obrigatório."],
+        "data": ["O campo data é obrigatório."],
+        "sala_id": ["O campo sala id é obrigatório."]
+    }
+}
+```
+
+**Data Inválida:**
+```json
+{
+    "error": "Validation failed",
+    "message": "Formato de data inválido. Use Y-m-d.",
+    "details": {
+        "type": "invalid_date_format",
+        "code": "validation_error"
+    }
+}
+```
+
+**Horário Inválido:**
+```json
+{
+    "message": "The given data was invalid.",
+    "errors": {
+        "horario_fim": ["O horário de fim deve ser posterior ao horário de início."]
+    }
+}
+```
+
+#### **Erros de Autorização (403)**
+
+**Acesso Negado:**
+```json
+{
+    "error": "Forbidden",
+    "message": "Você só pode cancelar suas próprias reservas.",
+    "details": {
+        "type": "insufficient_permissions",
+        "code": "unauthorized_access",
+        "user_id": 123,
+        "reservation_owner": 456
+    }
+}
+```
+
+#### **Erros de Negócio (422)**
+
+**Data Passada:**
+```json
+{
+    "error": "Validation failed",
+    "message": "Não é possível cancelar reservas de datas passadas.",
+    "details": {
+        "type": "business_rule_violation",
+        "code": "past_date_restriction"
+    }
+}
+```
+
+**Conflito de Horários:**
+```json
+{
+    "error": "Conflict",
+    "message": "Conflito detectado com a reserva 'Reunião Diretoria' (14:00 às 16:00).",
+    "details": {
+        "type": "time_conflict",
+        "code": "schedule_conflict",
+        "conflicting_reservation": {
+            "id": 789,
+            "nome": "Reunião Diretoria",
+            "horario_inicio": "14:00",
+            "horario_fim": "16:00"
+        }
+    }
+}
+```
+
+#### **Erros de Sistema (500)**
+
+**Erro de Banco de Dados:**
+```json
+{
+    "error": "Database error",
+    "message": "Erro na base de dados. Verifique os dados e tente novamente.",
+    "details": {
+        "type": "database_error",
+        "code": "query_exception"
+    }
+}
+```
+
+**Erro de Restrição Foreign Key:**
+```json
+{
+    "error": "Validation failed",
+    "message": "Referência inválida detectada (sala ou finalidade inexistente).",
+    "details": {
+        "type": "constraint_violation",
+        "code": "foreign_key_constraint"
+    }
+}
+```
+
+### Rate Limiting
+
+A API implementa rate limiting com diferentes limites por tipo de endpoint:
+
+| Endpoint Type | Limite | Período | Cabeçalho de Resposta |
+|---------------|--------|---------|----------------------|
+| **Public** | 60 requests | 1 minuto | `X-RateLimit-Limit: 60` |
+| **Auth** | 5 requests | 1 minuto | `X-RateLimit-Limit: 5` |
+| **API** | 100 requests | 1 minuto | `X-RateLimit-Limit: 100` |
+| **Reservations** | 30 requests | 1 minuto | `X-RateLimit-Limit: 30` |
+| **Admin** | 20 requests | 1 minuto | `X-RateLimit-Limit: 20` |
+
+**Exemplo de Rate Limit Excedido (429):**
+```json
+{
+    "message": "Too Many Attempts.",
+    "retry_after": 57
+}
+```
+
+**Headers de Resposta:**
+```http
+X-RateLimit-Limit: 30
+X-RateLimit-Remaining: 0
+Retry-After: 57
+```
+
+---
+
 ## 📋 Endpoints Protegidos (com autenticação)
 
 ### Gestão de Reservas
@@ -844,3 +1016,460 @@ Authorization: Bearer 1|TOKEN
     }
 }
 ```
+
+---
+
+## 💡 **Casos de Uso Práticos e Melhores Práticas**
+
+### Caso 1: Sistema de Gestão de Eventos
+**Cenário**: Uma universidade precisa gerenciar reservas de salas para eventos acadêmicos.
+
+```javascript
+// Fluxo completo de reserva de evento
+async function reservarEvento() {
+    // 1. Obter token de autenticação
+    const tokenResponse = await fetch('/api/v1/auth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            email: 'organizador@universidade.edu.br',
+            password: 'senha_segura',
+            token_name: 'Sistema Eventos'
+        })
+    });
+    
+    const { token } = (await tokenResponse.json()).data;
+    const headers = {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+    };
+
+    // 2. Listar salas disponíveis
+    const salasResponse = await fetch('/api/v1/salas', { headers });
+    const salas = (await salasResponse.json()).data;
+    
+    // 3. Verificar disponibilidade da sala desejada
+    const salaId = 16; // Auditório
+    const dataEvento = '2024-09-15';
+    
+    const disponibilidadeResponse = await fetch(
+        `/api/v1/salas/${salaId}/availability?data=${dataEvento}`, 
+        { headers }
+    );
+    
+    // 4. Criar reserva recorrente para série de palestras
+    const reservaResponse = await fetch('/api/v1/reservas', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+            nome: 'Semana de Ciência e Tecnologia',
+            descricao: 'Palestras diárias durante a semana acadêmica',
+            data: dataEvento,
+            horario_inicio: '19:00',
+            horario_fim: '21:00',
+            sala_id: salaId,
+            finalidade_id: 8, // Evento
+            tipo_responsaveis: 'unidade',
+            responsaveis_unidade: [123456, 789012],
+            repeat_days: [1, 2, 3, 4, 5], // Segunda a sexta
+            repeat_until: '2024-09-19'
+        })
+    });
+    
+    const reservaData = await reservaResponse.json();
+    
+    if (reservaResponse.ok) {
+        console.log(`✅ Série criada! ${reservaData.data.instances_created} reservas`);
+        return reservaData.data.parent_id;
+    } else {
+        console.error('❌ Erro na reserva:', reservaData);
+        throw new Error(reservaData.message);
+    }
+}
+```
+
+### Caso 2: App Mobile para Reservas Rápidas
+**Cenário**: Aplicativo móvel que permite reservas rápidas com validações inteligentes.
+
+```swift
+// Swift iOS - Reserva com tratamento de erros
+class ReservaService {
+    private let baseURL = "https://salas.usp.br/api/v1"
+    private var authToken: String?
+    
+    func criarReservaRapida(nome: String, salaId: Int, inicio: String, fim: String) async throws -> ReservaResponse {
+        guard let token = authToken else {
+            throw ReservaError.naoAutenticado
+        }
+        
+        let url = URL(string: "\(baseURL)/reservas")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        
+        let reservaData = [
+            "nome": nome,
+            "data": formatter.string(from: tomorrow),
+            "horario_inicio": inicio,
+            "horario_fim": fim,
+            "sala_id": salaId,
+            "finalidade_id": 7, // Reunião
+            "tipo_responsaveis": "eu"
+        ]
+        
+        request.httpBody = try JSONSerialization.data(withJSONObject: reservaData)
+        
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                switch httpResponse.statusCode {
+                case 201:
+                    return try JSONDecoder().decode(ReservaResponse.self, from: data)
+                case 401:
+                    throw ReservaError.tokenExpirado
+                case 403:
+                    throw ReservaError.semPermissao
+                case 422:
+                    let validationError = try JSONDecoder().decode(ValidationErrorResponse.self, from: data)
+                    throw ReservaError.dadosInvalidos(validationError.errors)
+                case 429:
+                    throw ReservaError.muitasRequisicoes
+                default:
+                    throw ReservaError.erroServidor(httpResponse.statusCode)
+                }
+            }
+        } catch {
+            throw ReservaError.erroRede(error.localizedDescription)
+        }
+        
+        throw ReservaError.respostaInvalida
+    }
+}
+
+enum ReservaError: Error {
+    case naoAutenticado
+    case tokenExpirado
+    case semPermissao
+    case dadosInvalidos([String: [String]])
+    case muitasRequisicoes
+    case erroServidor(Int)
+    case erroRede(String)
+    case respostaInvalida
+}
+```
+
+### Caso 3: Dashboard de Administração
+**Cenário**: Painel administrativo para gerenciar aprovações e relatórios.
+
+```python
+# Python - Dashboard admin com relatórios
+import requests
+from datetime import datetime, timedelta
+import pandas as pd
+
+class AdminDashboard:
+    def __init__(self, token):
+        self.base_url = "https://salas.usp.br/api/v1"
+        self.headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+    
+    def get_pending_approvals(self):
+        """Busca reservas pendentes de aprovação"""
+        try:
+            # Como não temos endpoint específico, simulamos busca por status
+            response = requests.get(
+                f"{self.base_url}/reservas/my",
+                headers=self.headers,
+                params={"status": "pendente", "per_page": 50}
+            )
+            
+            if response.status_code == 200:
+                return response.json()["data"]
+            elif response.status_code == 429:
+                print("⚠️ Rate limit atingido. Aguarde...")
+                return []
+            else:
+                print(f"❌ Erro ao buscar aprovações: {response.status_code}")
+                return []
+                
+        except requests.RequestException as e:
+            print(f"❌ Erro de rede: {e}")
+            return []
+    
+    def approve_reservation(self, reserva_id):
+        """Aprova uma reserva específica"""
+        try:
+            response = requests.patch(
+                f"{self.base_url}/reservas/{reserva_id}/approve",
+                headers=self.headers
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                print(f"✅ Reserva {reserva_id} aprovada por {data['data']['approved_by']}")
+                return True
+            elif response.status_code == 403:
+                print(f"❌ Sem permissão para aprovar reserva {reserva_id}")
+                return False
+            elif response.status_code == 422:
+                error_data = response.json()
+                print(f"❌ Não foi possível aprovar: {error_data['message']}")
+                return False
+            else:
+                print(f"❌ Erro inesperado: {response.status_code}")
+                return False
+                
+        except requests.RequestException as e:
+            print(f"❌ Erro de rede: {e}")
+            return False
+    
+    def generate_usage_report(self, days=30):
+        """Gera relatório de uso das salas"""
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=days)
+        
+        # Coleta dados dia por dia para contornar limitações da API
+        all_reservations = []
+        current_date = start_date
+        
+        while current_date <= end_date:
+            try:
+                response = requests.get(
+                    f"{self.base_url}/reservas",
+                    params={
+                        "data": current_date.strftime("%Y-%m-%d"),
+                        "per_page": 50
+                    }
+                )
+                
+                if response.status_code == 200:
+                    day_reservations = response.json()["data"]
+                    all_reservations.extend(day_reservations)
+                elif response.status_code == 429:
+                    print(f"⚠️ Rate limit - pulando {current_date}")
+                
+                current_date += timedelta(days=1)
+                
+            except requests.RequestException as e:
+                print(f"❌ Erro coletando dados de {current_date}: {e}")
+                current_date += timedelta(days=1)
+                continue
+        
+        # Análise com pandas
+        df = pd.DataFrame(all_reservations)
+        
+        if not df.empty:
+            # Relatório por sala
+            usage_by_room = df['sala'].value_counts()
+            
+            # Relatório por finalidade
+            usage_by_purpose = df['finalidade'].value_counts()
+            
+            # Horários mais utilizados
+            df['hour'] = pd.to_datetime(df['horario_inicio']).dt.hour
+            usage_by_hour = df['hour'].value_counts().sort_index()
+            
+            print(f"\n📊 Relatório de Uso - Últimos {days} dias")
+            print(f"Total de reservas: {len(df)}")
+            print(f"\n🏛️ Top 5 salas mais utilizadas:")
+            print(usage_by_room.head())
+            print(f"\n🎯 Finalidades mais comuns:")
+            print(usage_by_purpose.head())
+            print(f"\n⏰ Horários de pico:")
+            peak_hours = usage_by_hour.nlargest(3)
+            for hour, count in peak_hours.items():
+                print(f"  {hour:02d}:00 - {count} reservas")
+        
+        return df
+
+# Uso do dashboard
+if __name__ == "__main__":
+    # Assumindo que temos token de admin
+    admin = AdminDashboard("admin_token_here")
+    
+    # Processar aprovações pendentes
+    pending = admin.get_pending_approvals()
+    for reserva in pending:
+        print(f"📋 Reserva pendente: {reserva['nome']} - Sala {reserva['sala']}")
+        # admin.approve_reservation(reserva['id'])  # Descomente para aprovar
+    
+    # Gerar relatório mensal
+    report_df = admin.generate_usage_report(30)
+```
+
+### Melhores Práticas de Implementação
+
+#### 1. **Gerenciamento de Token**
+```javascript
+class TokenManager {
+    constructor() {
+        this.token = localStorage.getItem('api_token');
+        this.tokenExpiry = localStorage.getItem('token_expiry');
+    }
+    
+    async ensureValidToken(credentials) {
+        if (this.isTokenExpired()) {
+            await this.refreshToken(credentials);
+        }
+        return this.token;
+    }
+    
+    isTokenExpired() {
+        if (!this.token || !this.tokenExpiry) return true;
+        return Date.now() > parseInt(this.tokenExpiry);
+    }
+    
+    async refreshToken({ email, password }) {
+        const response = await fetch('/api/v1/auth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password, token_name: 'App Client' })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            this.token = data.data.token;
+            // Assumir expiração de 24h se não informado
+            this.tokenExpiry = Date.now() + (24 * 60 * 60 * 1000);
+            
+            localStorage.setItem('api_token', this.token);
+            localStorage.setItem('token_expiry', this.tokenExpiry.toString());
+        } else {
+            throw new Error('Falha na renovação do token');
+        }
+    }
+}
+```
+
+#### 2. **Retry Logic com Backoff Exponencial**
+```javascript
+class APIClient {
+    constructor(tokenManager) {
+        this.tokenManager = tokenManager;
+        this.maxRetries = 3;
+    }
+    
+    async request(endpoint, options = {}, retryCount = 0) {
+        const token = await this.tokenManager.ensureValidToken();
+        
+        const response = await fetch(`/api/v1${endpoint}`, {
+            ...options,
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                ...options.headers
+            }
+        });
+        
+        // Rate limiting - retry com backoff
+        if (response.status === 429 && retryCount < this.maxRetries) {
+            const retryAfter = response.headers.get('Retry-After') || 1;
+            const delay = Math.min(1000 * Math.pow(2, retryCount), parseInt(retryAfter) * 1000);
+            
+            console.log(`Rate limited. Retrying after ${delay}ms...`);
+            await this.sleep(delay);
+            return this.request(endpoint, options, retryCount + 1);
+        }
+        
+        // Token expirado - renovar e tentar novamente
+        if (response.status === 401 && retryCount < this.maxRetries) {
+            this.tokenManager.clearToken();
+            return this.request(endpoint, options, retryCount + 1);
+        }
+        
+        return response;
+    }
+    
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+}
+```
+
+#### 3. **Validação Client-Side**
+```javascript
+class ReservationValidator {
+    static validateReservation(data) {
+        const errors = {};
+        
+        // Validação de nome
+        if (!data.nome || data.nome.trim().length < 3) {
+            errors.nome = ['Nome deve ter pelo menos 3 caracteres'];
+        }
+        
+        // Validação de data
+        const reservationDate = new Date(data.data);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        if (reservationDate < today) {
+            errors.data = ['Data deve ser hoje ou no futuro'];
+        }
+        
+        // Validação de horários
+        const [startHour, startMin] = data.horario_inicio.split(':').map(Number);
+        const [endHour, endMin] = data.horario_fim.split(':').map(Number);
+        
+        const startMinutes = startHour * 60 + startMin;
+        const endMinutes = endHour * 60 + endMin;
+        
+        if (endMinutes <= startMinutes) {
+            errors.horario_fim = ['Horário de fim deve ser após o início'];
+        }
+        
+        // Validação de duração mínima (30 minutos)
+        if (endMinutes - startMinutes < 30) {
+            errors.horario_fim = ['Reserva deve ter duração mínima de 30 minutos'];
+        }
+        
+        return Object.keys(errors).length > 0 ? errors : null;
+    }
+    
+    static validateRecurringReservation(data) {
+        const errors = this.validateReservation(data) || {};
+        
+        if (data.repeat_days && data.repeat_days.length === 0) {
+            errors.repeat_days = ['Selecione pelo menos um dia da semana'];
+        }
+        
+        if (data.repeat_until) {
+            const endDate = new Date(data.repeat_until);
+            const startDate = new Date(data.data);
+            const maxDate = new Date(startDate);
+            maxDate.setMonth(maxDate.getMonth() + 6); // 6 meses máximo
+            
+            if (endDate > maxDate) {
+                errors.repeat_until = ['Período máximo de recorrência é 6 meses'];
+            }
+        }
+        
+        return Object.keys(errors).length > 0 ? errors : null;
+    }
+}
+```
+
+### Dicas de Performance e Otimização
+
+1. **Cache Local**: Cache listas de salas e finalidades no client
+2. **Paginação Inteligente**: Use `per_page` apropriado (15-25 para mobile, 50+ para desktop)
+3. **Filtros Eficientes**: Combine filtros para reduzir dados transferidos
+4. **Batch Operations**: Agrupe múltiplas operações quando possível
+5. **Connection Pooling**: Reutilize conexões HTTP/2
+6. **Gzip Compression**: Ative compressão para responses grandes
+
+### Troubleshooting Comum
+
+| Problema | Causa Provável | Solução |
+|----------|----------------|---------|
+| Token sempre inválido | Clock skew entre client/server | Sincronizar horário do sistema |
+| Rate limit constante | Muitas requisições paralelas | Implementar queue/throttling |
+| Conflitos de reserva | Validação client-server dessincronia | Revalidar antes de submeter |
+| Uploads lentos | Dados desnecessários no payload | Otimizar estrutura de dados |
