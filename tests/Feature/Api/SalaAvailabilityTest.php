@@ -11,10 +11,11 @@ use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Tests\TestCase;
+use Tests\Traits\CreatesAdminUsers;
 
 class SalaAvailabilityTest extends TestCase
 {
-    use RefreshDatabase, WithFaker;
+    use RefreshDatabase, WithFaker, CreatesAdminUsers;
 
     private Sala $sala;
     private Finalidade $finalidade;
@@ -28,7 +29,7 @@ class SalaAvailabilityTest extends TestCase
         $categoria = Categoria::factory()->create();
         $this->sala = Sala::factory()->create(['categoria_id' => $categoria->id]);
         $this->finalidade = Finalidade::factory()->create();
-        $this->user = User::factory()->create();
+        $this->user = $this->createAdmin();
     }
 
     /** @test */

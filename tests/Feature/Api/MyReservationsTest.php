@@ -12,10 +12,11 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
+use Tests\Traits\CreatesAdminUsers;
 
 class MyReservationsTest extends TestCase
 {
-    use RefreshDatabase, WithFaker;
+    use RefreshDatabase, WithFaker, CreatesAdminUsers;
 
     private User $user;
     private User $otherUser;
@@ -27,8 +28,8 @@ class MyReservationsTest extends TestCase
         parent::setUp();
 
         // Create test data
-        $this->user = User::factory()->create();
-        $this->otherUser = User::factory()->create();
+        $this->user = $this->createAdmin();
+        $this->otherUser = $this->createAdmin();
         $categoria = Categoria::factory()->create();
         $this->sala = Sala::factory()->create(['categoria_id' => $categoria->id]);
         $this->finalidade = Finalidade::factory()->create();

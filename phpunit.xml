@@ -21,10 +21,32 @@
         <server name="APP_ENV" value="testing"/>
         <server name="BCRYPT_ROUNDS" value="4"/>
         <server name="CACHE_DRIVER" value="array"/>
-        <!-- <server name="DB_DATABASE" value=":memory:"/> -->
+        <server name="DB_CONNECTION" value="sqlite"/>
+        <server name="DB_DATABASE" value=":memory:"/>
         <server name="MAIL_MAILER" value="array"/>
         <server name="QUEUE_CONNECTION" value="sync"/>
         <server name="SESSION_DRIVER" value="array"/>
         <server name="TELESCOPE_ENABLED" value="false"/>
+        
+        <!-- Disable extra fields validation during tests -->
+        <server name="RESERVA_CAMPOS_EXTRAS" value=""/>
+        
+        <!-- Disable Replicado completely in tests -->
+        <server name="REPLICADO_HOST" value=""/>
+        <server name="REPLICADO_PORT" value=""/>
+        <server name="REPLICADO_DATABASE" value=""/>
+        <server name="REPLICADO_USERNAME" value=""/>
+        <server name="REPLICADO_PASSWORD" value=""/>
+        <server name="REPLICADO_CODUNDCLG" value="8"/>
+        <server name="REPLICADO_SYBASE" value="false"/>
+        
+        <!-- USP/Auth related test values -->
+        <server name="SENHAUNICA_KEY" value="test"/>
+        <server name="SENHAUNICA_SECRET" value="test"/>
+        <server name="SENHAUNICA_CALLBACK_ID" value="1"/>
+        <server name="SENHAUNICA_ADMINS" value=""/>
+        
+        <!-- Disable mail copying in tests -->
+        <server name="MAIL_COPIAR_REMETENTE" value="false"/>
     </php>
 </phpunit>

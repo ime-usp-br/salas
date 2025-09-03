@@ -12,11 +12,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
+use Tests\Traits\CreatesAdminUsers;
 use Carbon\Carbon;
 
 class BusinessValidationTest extends TestCase
 {
-    use RefreshDatabase, WithFaker;
+    use RefreshDatabase, WithFaker, CreatesAdminUsers;
 
     private User $user;
     private User $responsible;
@@ -28,10 +29,10 @@ class BusinessValidationTest extends TestCase
     {
         parent::setUp();
 
-        // Create test users
-        $this->user = User::factory()->create();
-        $this->responsible = User::factory()->create();
-        $this->admin = User::factory()->create();
+        // Create test users - All need admin role for API access
+        $this->user = $this->createAdmin();
+        $this->responsible = $this->createAdmin();
+        $this->admin = $this->createAdmin();
 
         // Create test data
         $categoria = Categoria::factory()->create();
@@ -72,8 +73,11 @@ class BusinessValidationTest extends TestCase
         $response->assertStatus(422);
         // The verifyRoomAvailability rule handles conflicts, so check for that message instead
         $responseData = $response->json();
+        
         $this->assertTrue($response->status() === 422);
-        $this->assertArrayHasKey('errors', $responseData);
+        $this->assertArrayHasKey('details', $responseData);
+        $this->assertArrayHasKey('validation_errors', $responseData['details']);
+        $this->assertArrayHasKey('data', $responseData['details']['validation_errors']);
     }
 
     /** @test */
@@ -129,7 +133,9 @@ class BusinessValidationTest extends TestCase
     /** @test */
     public function test_approval_workflow_validates_user_permissions()
     {
-        Sanctum::actingAs($this->user); // Regular user, not responsible
+        // Create a non-admin user to test authorization 
+        $regularUser = User::factory()->create(); // No admin role
+        Sanctum::actingAs($regularUser);
 
         $pendingReservation = Reserva::factory()->create([
             'user_id' => $this->user->id,
@@ -241,7 +247,7 @@ class BusinessValidationTest extends TestCase
         ]);
 
         $response->assertStatus(422);
-        $this->assertStringContainsString('bloqueada', $response->json('errors.sala_id.0'));
+        $this->assertStringContainsString('bloqueada', $response->json('details.validation_errors.sala_id.0'));
     }
 
     /** @test */

@@ -8,19 +8,18 @@ use App\Models\Reserva;
 use App\Models\Sala;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
+use Tests\Traits\CreatesAdminUsers;
 use Carbon\Carbon;
 
 class SimpleReservaTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, CreatesAdminUsers;
 
     public function test_simple_post_request()
     {
-        // Create a user and authenticate
-        $user = User::factory()->create();
-        Sanctum::actingAs($user);
+        // Create admin user and authenticate
+        $this->actingAsAdmin();
 
         // Create test data
         $categoria = Categoria::factory()->create();

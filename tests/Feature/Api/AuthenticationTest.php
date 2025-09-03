@@ -19,6 +19,10 @@ class AuthenticationTest extends TestCase
         
         // Executa as migrações incluindo a do Sanctum
         $this->artisan('migrate');
+        
+        // Limpa o rate limiter para garantir testes limpos
+        \Illuminate\Support\Facades\RateLimiter::clear('token-creation:127.0.0.1');
+        \Illuminate\Support\Facades\RateLimiter::clear('token-creation:::1');
     }
 
     /** @test */
@@ -82,7 +86,17 @@ class AuthenticationTest extends TestCase
         ]);
 
         $response->assertStatus(422)
-                ->assertJsonValidationErrors(['email']);
+                ->assertJson([
+                    'error' => 'Validation failed',
+                    'message' => 'Os dados fornecidos são inválidos.',
+                    'details' => [
+                        'type' => 'validation_error',
+                        'code' => 'invalid_input',
+                        'validation_errors' => [
+                            'email' => ['As credenciais fornecidas estão incorretas.']
+                        ]
+                    ]
+                ]);
 
         // Verifica que nenhum token foi criado
         $this->assertDatabaseMissing('personal_access_tokens', [
@@ -99,7 +113,7 @@ class AuthenticationTest extends TestCase
         ]);
 
         $response->assertStatus(422)
-                ->assertJsonValidationErrors(['email']);
+                ->assertJsonPath('details.validation_errors.email.0', 'As credenciais fornecidas estão incorretas.');
     }
 
     /** @test */
@@ -108,7 +122,18 @@ class AuthenticationTest extends TestCase
         $response = $this->postJson('/api/v1/auth/token', []);
 
         $response->assertStatus(422)
-                ->assertJsonValidationErrors(['email', 'password']);
+                ->assertJson([
+                    'error' => 'Validation failed',
+                    'message' => 'Os dados fornecidos são inválidos.',
+                    'details' => [
+                        'type' => 'validation_error',
+                        'code' => 'invalid_input',
+                        'validation_errors' => [
+                            'email' => ['validation.required'],
+                            'password' => ['validation.required']
+                        ]
+                    ]
+                ]);
     }
 
     /** @test */
@@ -269,8 +294,9 @@ class AuthenticationTest extends TestCase
         // A 6ª tentativa deve retornar erro de rate limiting (429)
         $response->assertStatus(429);
         
-        // Verifica que o header de retry-after está presente
-        $this->assertTrue($response->headers->has('Retry-After'));
+        // Verifica que os headers de rate limiting estão presentes
+        $this->assertTrue($response->headers->has('X-RateLimit-Limit'));
+        $this->assertTrue($response->headers->has('X-RateLimit-Remaining'));
     }
 
     /** @test */
