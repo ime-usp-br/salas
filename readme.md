@@ -78,15 +78,96 @@ Através da API, é possível consultar as informações básicas sobre as salas
 
 Os _endpoints_ disponíveis e seus respectivos retornos estão listados [aqui](docs/endpoints_api.md).
 
-## Criando Usuários para API
+## Configuração de Campos Extras (RESERVA_CAMPOS_EXTRAS)
 
-Para integração com sistemas externos, é possível criar usuários dedicados que não dependem da senha única USP. Estes usuários são criados exclusivamente para acesso via API com autenticação por token.
+**IMPORTANTE**: A variável de ambiente `RESERVA_CAMPOS_EXTRAS` é **obrigatória** para o funcionamento correto da API de reservas.
+
+### O que são Campos Extras
+
+Os campos extras são campos personalizados que podem ser configurados para cada instalação do sistema, permitindo que diferentes unidades coletem informações específicas durante o processo de reserva.
+
+### Configuração no .env
 
 ```bash
-php artisan make:api-user
+RESERVA_CAMPOS_EXTRAS="Campo Teste 1,Campo Teste 2"
 ```
 
-O comando criará um usuário de forma interativa, solicitando nome, email e senha, e gerará automaticamente um token de API para uso nos endpoints protegidos.
+- **Formato**: Lista separada por vírgulas dos nomes dos campos extras
+- **Obrigatoriedade**: Todos os campos definidos são **obrigatórios** na criação de reservas
+- **Transformação**: Os nomes são convertidos automaticamente para formato `snake_case` (ex: "Campo Teste 1" → "campo_teste_1")
+
+### Impacto na API
+
+Quando campos extras estão configurados, a API exige que sejam enviados no campo `extras` da requisição:
+
+```json
+{
+  "sala_id": 1,
+  "finalidade_id": 7,
+  "nome": "Reunião",
+  "data": "2025-09-10",
+  "horario_inicio": "14:00",
+  "horario_fim": "16:00",
+  "tipo_responsaveis": "eu",
+  "extras": {
+    "campo_teste_1": "Valor1",
+    "campo_teste_2": "Valor2"
+  }
+}
+```
+
+### Mensagens de Erro
+
+Se os campos extras obrigatórios não forem fornecidos, a API retornará erro 422 com as mensagens específicas:
+
+```json
+{
+  "success": false,
+  "message": "Os dados fornecidos são inválidos.",
+  "errors": {
+    "extras.campo_teste_1": ["O campo Campo Teste 1 é obrigatório."],
+    "extras.campo_teste_2": ["O campo Campo Teste 2 é obrigatório."]
+  }
+}
+```
+
+### Recomendações
+
+1. **Sempre configure** a variável `RESERVA_CAMPOS_EXTRAS` no .env antes de usar a API
+2. **Documente** os campos extras para desenvolvedores que irão integrar com a API
+3. **Teste** a API após mudanças na configuração de campos extras
+4. **Use nomes descritivos** para os campos extras que facilitem o entendimento
+
+## Criando Usuários Administradores para API
+
+Para integração com sistemas externos, é necessário criar usuários administradores locais que não dependem da senha única USP. Apenas usuários com role **admin** podem criar, editar e deletar reservas via API.
+
+```bash
+php artisan make:admin-local-user
+```
+
+O comando criará um usuário administrador de forma interativa, solicitando nome, email e senha. O usuário será automaticamente configurado com role `admin` para acesso completo à API.
+
+### Autenticação via API
+
+1. **Login**: Fazer POST para `/api/v1/auth/token` com email e senha
+2. **Token**: Usar o token retornado no header `Authorization: Bearer [token]`
+3. **Uso**: Incluir header `Accept: application/json` para respostas JSON estruturadas
+
+```bash
+# Exemplo de login
+curl -X POST http://localhost:8000/api/v1/auth/token \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"email":"admin@example.com","password":"senha123"}'
+
+# Exemplo de criação de reserva
+curl -X POST http://localhost:8000/api/v1/reservas \
+  -H "Authorization: Bearer [seu-token-aqui]" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"sala_id":1,"finalidade_id":7,"nome":"Reunião","data":"2025-09-10","horario_inicio":"14:00","horario_fim":"16:00","tipo_responsaveis":"eu","extras":{"campo_teste_1":"Valor1","campo_teste_2":"Valor2"}}'
+```
 
 ## Utilizando a API com Drupal
 

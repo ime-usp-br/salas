@@ -136,6 +136,7 @@ class StoreReservaRequest extends FormRequest
     public function messages(): array
     {
         $messages = [
+            // Basic field validation messages
             'nome.required' => 'O título da reserva é obrigatório.',
             'nome.max' => 'O título da reserva não pode exceder 255 caracteres.',
             'data.required' => 'A data da reserva é obrigatória.',
@@ -149,42 +150,73 @@ class StoreReservaRequest extends FormRequest
             'horario_fim.after' => 'O horário de fim deve ser posterior ao horário de início.',
             'sala_id.required' => 'É necessário selecionar uma sala.',
             'sala_id.integer' => 'O ID da sala deve ser um número inteiro.',
-            'sala_id.in' => 'A sala selecionada não é válida.',
+            'sala_id.in' => 'A sala selecionada não é válida ou não existe.',
             'finalidade_id.required' => 'É necessário selecionar uma finalidade.',
             'finalidade_id.integer' => 'O ID da finalidade deve ser um número inteiro.',
-            'finalidade_id.exists' => 'A finalidade selecionada não existe.',
+            'finalidade_id.exists' => 'A finalidade selecionada não existe no sistema.',
             'tipo_responsaveis.required' => 'É necessário especificar o tipo de responsáveis.',
-            'tipo_responsaveis.in' => 'O tipo de responsáveis deve ser: eu, unidade ou externo.',
-            'responsaveis_unidade.required_if' => 'É necessário informar pelo menos um responsável da unidade.',
+            'tipo_responsaveis.in' => 'O tipo de responsáveis deve ser: "eu", "unidade" ou "externo".',
+            
+            // Responsaveis validation messages
+            'responsaveis_unidade.required_if' => 'É necessário informar pelo menos um responsável da unidade quando tipo_responsaveis for "unidade".',
             'responsaveis_unidade.array' => 'Os responsáveis da unidade devem ser fornecidos como um array.',
             'responsaveis_unidade.*.integer' => 'Cada código de responsável da unidade deve ser um número inteiro.',
             'responsaveis_unidade.*.min' => 'O código do responsável da unidade deve ser maior que zero.',
-            'responsaveis_externo.required_if' => 'É necessário informar pelo menos um responsável externo.',
+            'responsaveis_externo.required_if' => 'É necessário informar pelo menos um responsável externo quando tipo_responsaveis for "externo".',
             'responsaveis_externo.array' => 'Os responsáveis externos devem ser fornecidos como um array.',
             'responsaveis_externo.*.string' => 'Cada nome de responsável externo deve ser uma string.',
             'responsaveis_externo.*.max' => 'O nome do responsável externo não pode exceder 255 caracteres.',
-            'repeat_until.required_with' => 'A data de fim da recorrência é obrigatória quando há repetição.',
+            
+            // Recurring reservation messages
+            'repeat_until.required_with' => 'A data de fim da recorrência é obrigatória quando há repetição (repeat_days informado).',
             'repeat_until.date_format' => 'A data de fim da recorrência deve estar no formato AAAA-MM-DD.',
             'repeat_until.after_or_equal' => 'A data de fim da recorrência deve ser igual ou posterior à data da reserva.',
             'repeat_days.array' => 'Os dias de repetição devem ser fornecidos como um array.',
+            'repeat_days.min' => 'É necessário informar pelo menos um dia da semana para repetição.',
             'repeat_days.*.integer' => 'Cada dia de repetição deve ser um número inteiro.',
             'repeat_days.*.between' => 'Os dias de repetição devem estar entre 0 (domingo) e 6 (sábado).',
             'repeat_days.max' => 'Não é possível repetir em mais de 7 dias por semana.',
             
-            // Enhanced business validation messages
-            'sala_id.user_permission_rule' => 'Você não tem permissão para reservar salas desta categoria.',
-            'data.reservation_conflict_rule' => 'Conflito de horário detectado com outras reservas.',
+            // Enhanced business validation messages with context
+            'sala_id.user_permission_rule' => 'Acesso negado: apenas administradores podem criar reservas via API.',
+            'data.reservation_conflict_rule' => 'Conflito de horário: já existe uma reserva para esta sala no horário solicitado.',
+            'data.verify_room_availability' => 'Sala não disponível: verifique se a sala não está bloqueada ou se há restrições de horário.',
         ];
 
-        // Add messages for extra fields
+        // Add enhanced messages for extra fields with context
         $extras = config('salas.reservaCamposExtras');
         if (!empty($extras)) {
+            $messages['extras.required'] = 'Os campos extras são obrigatórios quando configurados no sistema.';
             foreach ($extras as $campo) {
-                $messages['extras.' . Str::slug($campo, '_') . '.required'] = 'O campo ' . $campo . ' é obrigatório.';
+                $fieldSlug = Str::slug($campo, '_');
+                $messages["extras.{$fieldSlug}.required"] = "O campo '{$campo}' é obrigatório. Configure os campos extras no objeto 'extras' da requisição.";
             }
         }
 
         return $messages;
+    }
+
+    /**
+     * Get custom attributes for validator errors.
+     *
+     * @return array<string, string>
+     */
+    public function attributes(): array
+    {
+        return [
+            'nome' => 'título da reserva',
+            'data' => 'data da reserva',
+            'horario_inicio' => 'horário de início',
+            'horario_fim' => 'horário de fim',
+            'sala_id' => 'sala',
+            'finalidade_id' => 'finalidade',
+            'tipo_responsaveis' => 'tipo de responsáveis',
+            'responsaveis_unidade' => 'responsáveis da unidade',
+            'responsaveis_externo' => 'responsáveis externos',
+            'repeat_until' => 'data de fim da recorrência',
+            'repeat_days' => 'dias de repetição',
+            'extras' => 'campos extras',
+        ];
     }
 
     /**

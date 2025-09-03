@@ -11,11 +11,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
+use Tests\Traits\CreatesAdminUsers;
 use Carbon\Carbon;
 
 class ReservasApiTest extends TestCase
 {
-    use RefreshDatabase, WithFaker;
+    use RefreshDatabase, WithFaker, CreatesAdminUsers;
 
     private User $user;
     private User $admin;
@@ -26,9 +27,9 @@ class ReservasApiTest extends TestCase
     {
         parent::setUp();
 
-        // Create test users
-        $this->user = User::factory()->create();
-        $this->admin = User::factory()->create();
+        // Create test users - All need admin role for API access
+        $this->user = $this->createAdmin();
+        $this->admin = $this->createAdmin();
 
         // Create test data
         $categoria = Categoria::factory()->create();
@@ -194,8 +195,10 @@ class ReservasApiTest extends TestCase
     /** @test */
     public function test_user_cannot_update_other_users_reserva()
     {
-        $otherUser = User::factory()->create();
-        Sanctum::actingAs($this->user);
+        // Create two regular non-admin users
+        $otherUser = User::factory()->create(); // No admin role
+        $regularUser = User::factory()->create(); // No admin role
+        Sanctum::actingAs($regularUser);
 
         $reserva = Reserva::factory()->create([
             'user_id' => $otherUser->id,
@@ -271,8 +274,10 @@ class ReservasApiTest extends TestCase
     /** @test */
     public function test_user_cannot_delete_other_users_reserva()
     {
-        $otherUser = User::factory()->create();
-        Sanctum::actingAs($this->user);
+        // Create two regular non-admin users
+        $otherUser = User::factory()->create(); // No admin role
+        $regularUser = User::factory()->create(); // No admin role
+        Sanctum::actingAs($regularUser);
 
         $reserva = Reserva::factory()->create([
             'user_id' => $otherUser->id,
@@ -371,7 +376,9 @@ class ReservasApiTest extends TestCase
     /** @test */
     public function test_create_reserva_with_past_date_validation()
     {
-        Sanctum::actingAs($this->user);
+        // Create regular non-admin user to test date validation  
+        $regularUser = User::factory()->create(); // No admin role
+        Sanctum::actingAs($regularUser);
 
         $pastDate = Carbon::yesterday()->format('Y-m-d');
 
@@ -386,7 +393,9 @@ class ReservasApiTest extends TestCase
         ]);
 
         $response->assertStatus(422)
-            ->assertJsonValidationErrors(['data']);
+            ->assertJsonPath('details.validation_errors.data.0', function ($message) {
+                return str_contains($message, 'passada') || str_contains($message, 'anterior');
+            });
     }
 
     /** @test */
@@ -405,7 +414,9 @@ class ReservasApiTest extends TestCase
         ]);
 
         $response->assertStatus(422)
-            ->assertJsonValidationErrors(['horario_fim']);
+            ->assertJsonPath('details.validation_errors.horario_fim', function ($errors) {
+                return !empty($errors);
+            });
     }
 
     /** @test */
@@ -636,7 +647,7 @@ class ReservasApiTest extends TestCase
     /** @test */
     public function test_enhanced_permission_error_format()
     {
-        $otherUser = User::factory()->create();
+        $otherUser = $this->createAdmin();
         Sanctum::actingAs($this->user);
 
         $reserva = Reserva::factory()->create([

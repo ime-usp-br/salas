@@ -12,10 +12,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
+use Tests\Traits\CreatesAdminUsers;
+use Spatie\Permission\Models\Role;
 
 class ReservasIntegrationTest extends TestCase
 {
-    use RefreshDatabase, WithFaker;
+    use RefreshDatabase, WithFaker, CreatesAdminUsers;
 
     private User $user;
     private User $admin;
@@ -28,10 +30,10 @@ class ReservasIntegrationTest extends TestCase
     {
         parent::setUp();
 
-        // Create test users
-        $this->user = User::factory()->create();
-        $this->admin = User::factory()->create();
-        $this->roomManager = User::factory()->create();
+        // Create test users - All need admin role for API access
+        $this->user = $this->createAdmin();
+        $this->admin = $this->createAdmin();
+        $this->roomManager = $this->createAdmin();
 
         // Create test data
         $categoria = Categoria::factory()->create();

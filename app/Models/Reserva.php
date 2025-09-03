@@ -15,6 +15,10 @@ class Reserva extends Model implements Auditable
 
     use HasFactory;
     protected $guarded = ['id'];
+    
+    protected $casts = [
+        'extras' => 'json',
+    ];
 
     public function setDataAttribute($value)
     {

@@ -72,24 +72,13 @@ class Handler extends ExceptionHandler
      */
     public function render($request, Throwable $e)
     {
-        // IMPORTANT: Only handle API exceptions if they are NOT already handled
-        // and only for specific exception types to maintain compatibility
+        // Enhanced API exception handling - ensure JSON responses for API routes
         if ($request->expectsJson() || $request->is('api/*')) {
-            // Only handle specific exceptions that need standardization
-            // Let Laravel handle ValidationException and others to maintain compatibility
-            if ($e instanceof AuthenticationException) {
-                return $this->renderApiException($request, $e);
-            }
-            
-            if ($e instanceof ThrottleRequestsException) {
-                return $this->renderApiException($request, $e);
-            }
-            
-            // For other exceptions, let Laravel handle them normally
-            // This preserves existing test expectations and response formats
+            // Handle all exceptions for API routes to avoid redirects
+            return $this->renderApiException($request, $e);
         }
 
-        // For web requests and unhandled API exceptions, use default Laravel handling
+        // For web requests, use default Laravel handling
         return parent::render($request, $e);
     }
 
