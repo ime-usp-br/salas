@@ -78,6 +78,16 @@ Através da API, é possível consultar as informações básicas sobre as salas
 
 Os _endpoints_ disponíveis e seus respectivos retornos estão listados [aqui](docs/endpoints_api.md).
 
+## Criando Usuários para API
+
+Para integração com sistemas externos, é possível criar usuários dedicados que não dependem da senha única USP. Estes usuários são criados exclusivamente para acesso via API com autenticação por token.
+
+```bash
+php artisan make:api-user
+```
+
+O comando criará um usuário de forma interativa, solicitando nome, email e senha, e gerará automaticamente um token de API para uso nos endpoints protegidos.
+
 ## Utilizando a API com Drupal
 
 Ao utilizar o sistema de gerenciamento de conteúdo [Drupal](https://www.drupal.org/), é possível fazer uso da API utilizando o módulo Views Json Source, que pode ser instalado via composer com o comando `composer require drupal/views_json_source`.
