@@ -7,7 +7,7 @@ use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Contracts\Validation\Rule;
 
-class ReservationConflictRule implements Rule
+class ApiReservationConflictRule implements Rule
 {
     private $request;
     private $reservaId;
@@ -39,7 +39,7 @@ class ReservationConflictRule implements Rule
         }
 
         if (!empty($this->conflicts)) {
-            $this->message = 'Conflitos encontrados com reservas existentes: ' . implode(', ', $this->conflicts);
+            $this->message = 'Reserva não foi criada porque conflita com: <ul>' . implode('', $this->conflicts) . '</ul>';
             return false;
         }
 
@@ -60,7 +60,19 @@ class ReservationConflictRule implements Rule
             return; // Skip validation if date format is invalid
         }
 
-        // Get existing reservations for the same date and room
+        // For recurring reservations, we need to check conflicts with other reservations on the same day of the week
+        $isRecurring = $this->request->has('repeat_days') && !empty($this->request->repeat_days);
+        
+        if ($isRecurring) {
+            $this->checkRecurringDateConflicts($inputDate);
+        } else {
+            $this->checkSingleDateConflicts($inputDate);
+        }
+    }
+
+    private function checkSingleDateConflicts($inputDate)
+    {
+        // For single (non-recurring) reservations, only check conflicts on the exact same date
         $existingReservations = Reserva::whereDate('data', '=', $inputDate)
             ->where('sala_id', $this->request->sala_id)
             ->where('status', '!=', 'rejeitada')
@@ -77,10 +89,14 @@ class ReservationConflictRule implements Rule
         $this->checkTimeOverlaps($existingReservations, $inputDate);
     }
 
-    private function checkRecurringConflicts($startDate)
+    private function checkRecurringDateConflicts($inputDate)
     {
+        // For recurring reservations, check conflicts with:
+        // 1. Single reservations on any of our recurring dates
+        // 2. Other recurring reservations that have overlapping days of the week
+        
         try {
-            $start = Carbon::createFromFormat('Y-m-d', $startDate);
+            $start = $inputDate;
             $end = Carbon::createFromFormat('Y-m-d', $this->request->repeat_until);
         } catch (\Exception $e) {
             return; // Skip validation if date format is invalid
@@ -89,11 +105,32 @@ class ReservationConflictRule implements Rule
         $repeatDays = is_array($this->request->repeat_days) ? $this->request->repeat_days : [];
         $period = CarbonPeriod::between($start, $end);
 
+        // Check each date in our recurring series
         foreach ($period as $date) {
             if (in_array($date->dayOfWeek, $repeatDays)) {
-                $this->checkDateConflicts($date->format('Y-m-d'));
+                // Get existing reservations for this specific date
+                $existingReservations = Reserva::whereDate('data', '=', $date)
+                    ->where('sala_id', $this->request->sala_id)
+                    ->where('status', '!=', 'rejeitada')
+                    ->when($this->reservaId, function ($query) {
+                        return $query->where('id', '!=', $this->reservaId)
+                            // Also exclude child reservations of the current series
+                            ->where('parent_id', '!=', $this->reservaId);
+                    })
+                    ->get();
+
+                if (!$existingReservations->isEmpty()) {
+                    $this->checkTimeOverlaps($existingReservations, $date);
+                }
             }
         }
+    }
+
+    private function checkRecurringConflicts($startDate)
+    {
+        // This method is called for recurring reservations to check the entire series
+        // The actual work is done in checkRecurringDateConflicts() which is called from checkDateConflicts()
+        return;
     }
 
     private function checkTimeOverlaps($existingReservations, $inputDate)
@@ -125,13 +162,12 @@ class ReservationConflictRule implements Rule
                 continue; // Skip this reservation if date/time parsing fails
             }
 
-            // Check if the time periods overlap using simple comparison
+            // Check if the time periods overlap
             if ($this->periodsOverlap($requestStart, $requestEnd, $reservationStart, $reservationEnd)) {
                 $this->conflicts[] = sprintf(
-                    '%s (%s às %s)',
-                    $reservation->nome,
-                    $reservation->horario_inicio,
-                    $reservation->horario_fim
+                    '<li><a href="/reservas/%d">%s</a></li>',
+                    $reservation->id,
+                    $reservation->nome
                 );
             }
         }
