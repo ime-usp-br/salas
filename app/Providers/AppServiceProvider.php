@@ -56,11 +56,14 @@ class AppServiceProvider extends ServiceProvider
             $email = $request->input('email', 'unknown');
             return [
                 // General limit for auth endpoints
-                Limit::perMinute(20)->by('auth:general:' . $request->ip()),
+                Limit::perMinute(config('api.rate_limits.auth.general.max_attempts'))
+                    ->by('auth:general:' . $request->ip()),
                 // Specific limit per email to prevent targeted attacks
-                Limit::perMinute(5)->by('auth:email:' . $email . ':' . $request->ip()),
+                Limit::perMinute(config('api.rate_limits.auth.per_email.max_attempts'))
+                    ->by('auth:email:' . $email . ':' . $request->ip()),
                 // Hourly limit to prevent sustained attacks
-                Limit::perHour(50)->by('auth:hourly:' . $request->ip()),
+                Limit::perHour(config('api.rate_limits.auth.hourly.max_attempts'))
+                    ->by('auth:hourly:' . $request->ip()),
             ];
         });
 
@@ -71,14 +74,18 @@ class AppServiceProvider extends ServiceProvider
             if ($user) {
                 // Higher limits for authenticated users
                 return [
-                    Limit::perMinute(100)->by('api:user:' . $user->id),
-                    Limit::perHour(2000)->by('api:user:hourly:' . $user->id),
+                    Limit::perMinute(config('api.rate_limits.api.authenticated.per_minute.max_attempts'))
+                        ->by('api:user:' . $user->id),
+                    Limit::perHour(config('api.rate_limits.api.authenticated.hourly.max_attempts'))
+                        ->by('api:user:hourly:' . $user->id),
                 ];
             } else {
                 // Lower limits for unauthenticated requests
                 return [
-                    Limit::perMinute(30)->by('api:guest:' . $request->ip()),
-                    Limit::perHour(500)->by('api:guest:hourly:' . $request->ip()),
+                    Limit::perMinute(config('api.rate_limits.api.guest.per_minute.max_attempts'))
+                        ->by('api:guest:' . $request->ip()),
+                    Limit::perHour(config('api.rate_limits.api.guest.hourly.max_attempts'))
+                        ->by('api:guest:hourly:' . $request->ip()),
                 ];
             }
         });
@@ -86,8 +93,10 @@ class AppServiceProvider extends ServiceProvider
         // Public endpoints (read-only, no auth required)
         RateLimiter::for('public', function (Request $request) {
             return [
-                Limit::perMinute(60)->by('public:' . $request->ip()),
-                Limit::perHour(1000)->by('public:hourly:' . $request->ip()),
+                Limit::perMinute(config('api.rate_limits.public.per_minute.max_attempts'))
+                    ->by('public:' . $request->ip()),
+                Limit::perHour(config('api.rate_limits.public.hourly.max_attempts'))
+                    ->by('public:hourly:' . $request->ip()),
             ];
         });
 
@@ -97,10 +106,13 @@ class AppServiceProvider extends ServiceProvider
             $identifier = $user ? 'user:' . $user->id : 'ip:' . $request->ip();
             
             return [
-                Limit::perMinute(10)->by('uploads:' . $identifier),
-                Limit::perHour(100)->by('uploads:hourly:' . $identifier),
+                Limit::perMinute(config('api.rate_limits.uploads.per_minute.max_attempts'))
+                    ->by('uploads:' . $identifier),
+                Limit::perHour(config('api.rate_limits.uploads.hourly.max_attempts'))
+                    ->by('uploads:hourly:' . $identifier),
                 // Daily limit to prevent abuse
-                Limit::perDay(500)->by('uploads:daily:' . $identifier),
+                Limit::perDay(config('api.rate_limits.uploads.daily.max_attempts'))
+                    ->by('uploads:daily:' . $identifier),
             ];
         });
 
@@ -109,8 +121,10 @@ class AppServiceProvider extends ServiceProvider
             $user = $request->user();
             
             return [
-                Limit::perMinute(30)->by('admin:user:' . ($user?->id ?? 'guest')),
-                Limit::perHour(300)->by('admin:user:hourly:' . ($user?->id ?? 'guest')),
+                Limit::perMinute(config('api.rate_limits.admin.per_minute.max_attempts'))
+                    ->by('admin:user:' . ($user?->id ?? 'guest')),
+                Limit::perHour(config('api.rate_limits.admin.hourly.max_attempts'))
+                    ->by('admin:user:hourly:' . ($user?->id ?? 'guest')),
             ];
         });
 
@@ -123,9 +137,9 @@ class AppServiceProvider extends ServiceProvider
                 $isBulkUser = false;
                 if (method_exists($user, 'hasRole')) {
                     try {
-                        $bulkRoles = ['bulk-importer', 'system-integration', 'admin'];
+                        $bulkRoles = explode(',', config('api.rate_limits.reservations.bulk_roles'));
                         foreach ($bulkRoles as $role) {
-                            if ($user->hasRole($role)) {
+                            if ($user->hasRole(trim($role))) {
                                 $isBulkUser = true;
                                 break;
                             }
@@ -138,22 +152,29 @@ class AppServiceProvider extends ServiceProvider
                 if ($isBulkUser) {
                     // Higher limits for system integration (semester reservations)
                     return [
-                        Limit::perMinute(60)->by('reservations:bulk:' . $user->id),
-                        Limit::perHour(500)->by('reservations:bulk:hourly:' . $user->id),
-                        Limit::perDay(2000)->by('reservations:bulk:daily:' . $user->id),
+                        Limit::perMinute(config('api.rate_limits.reservations.bulk_user.per_minute.max_attempts'))
+                            ->by('reservations:bulk:' . $user->id),
+                        Limit::perHour(config('api.rate_limits.reservations.bulk_user.hourly.max_attempts'))
+                            ->by('reservations:bulk:hourly:' . $user->id),
+                        Limit::perDay(config('api.rate_limits.reservations.bulk_user.daily.max_attempts'))
+                            ->by('reservations:bulk:daily:' . $user->id),
                     ];
                 } else {
                     // Normal limits for regular users
                     return [
-                        Limit::perMinute(30)->by('reservations:user:' . $user->id),
-                        Limit::perHour(500)->by('reservations:user:hourly:' . $user->id),
+                        Limit::perMinute(config('api.rate_limits.reservations.regular_user.per_minute.max_attempts'))
+                            ->by('reservations:user:' . $user->id),
+                        Limit::perHour(config('api.rate_limits.reservations.regular_user.hourly.max_attempts'))
+                            ->by('reservations:user:hourly:' . $user->id),
                     ];
                 }
             } else {
                 // Public reservation queries
                 return [
-                    Limit::perMinute(20)->by('reservations:guest:' . $request->ip()),
-                    Limit::perHour(200)->by('reservations:guest:hourly:' . $request->ip()),
+                    Limit::perMinute(config('api.rate_limits.reservations.guest.per_minute.max_attempts'))
+                        ->by('reservations:guest:' . $request->ip()),
+                    Limit::perHour(config('api.rate_limits.reservations.guest.hourly.max_attempts'))
+                        ->by('reservations:guest:hourly:' . $request->ip()),
                 ];
             }
         });
@@ -164,9 +185,12 @@ class AppServiceProvider extends ServiceProvider
             $identifier = $user ? 'user:' . $user->id : 'ip:' . $request->ip();
             
             return [
-                Limit::perMinute(100)->by('bulk:' . $identifier),
-                Limit::perHour(1000)->by('bulk:hourly:' . $identifier),
-                Limit::perDay(5000)->by('bulk:daily:' . $identifier),
+                Limit::perMinute(config('api.rate_limits.bulk.per_minute.max_attempts'))
+                    ->by('bulk:' . $identifier),
+                Limit::perHour(config('api.rate_limits.bulk.hourly.max_attempts'))
+                    ->by('bulk:hourly:' . $identifier),
+                Limit::perDay(config('api.rate_limits.bulk.daily.max_attempts'))
+                    ->by('bulk:daily:' . $identifier),
             ];
         });
     }
