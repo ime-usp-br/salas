@@ -6,6 +6,7 @@ use App\Models\Sala;
 use App\Rules\verifyRoomAvailability;
 use App\Rules\RestricoesSalaRule;
 use App\Rules\ReservationConflictRule;
+use App\Rules\ApiReservationConflictRule;
 use App\Rules\UserPermissionRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Gate;
@@ -45,7 +46,7 @@ class StoreReservaRequest extends FormRequest
                 'bail', 
                 'required', 
                 'date_format:Y-m-d', 
-                new verifyRoomAvailability($this, 0)
+                new ApiReservationConflictRule($this, 0)
             ],
             'horario_inicio' => 'required|date_format:G:i',
             'horario_fim' => 'required|date_format:G:i|after:horario_inicio',
