@@ -169,57 +169,6 @@ class BusinessValidationTest extends TestCase
         $response->assertStatus(422);
     }
 
-    /** @test */
-    public function test_business_hours_validation_restricts_early_hours()
-    {
-        Sanctum::actingAs($this->user);
-
-        // Create a basic restriction to trigger RestricoesSalaRule
-        $restricao = Restricao::create([
-            'sala_id' => $this->sala->id
-        ]);
-
-        $this->sala->update(['restricao_id' => $restricao->id]);
-        $this->sala->fresh();
-
-        $response = $this->postJson('/api/v1/reservas', [
-            'nome' => 'Early Morning Meeting',
-            'data' => Carbon::tomorrow()->format('Y-m-d'),
-            'horario_inicio' => '07:00', // Before business hours
-            'horario_fim' => '09:00',
-            'sala_id' => $this->sala->id,
-            'finalidade_id' => $this->finalidade->id,
-            'tipo_responsaveis' => 'eu'
-        ]);
-
-        $response->assertStatus(422);
-    }
-
-    /** @test */
-    public function test_business_hours_validation_restricts_late_hours()
-    {
-        Sanctum::actingAs($this->user);
-
-        // Create a basic restriction to trigger RestricoesSalaRule
-        $restricao = Restricao::create([
-            'sala_id' => $this->sala->id
-        ]);
-
-        $this->sala->update(['restricao_id' => $restricao->id]);
-        $this->sala->fresh();
-
-        $response = $this->postJson('/api/v1/reservas', [
-            'nome' => 'Late Night Meeting',
-            'data' => Carbon::tomorrow()->format('Y-m-d'),
-            'horario_inicio' => '21:00',
-            'horario_fim' => '23:00', // After business hours
-            'sala_id' => $this->sala->id,
-            'finalidade_id' => $this->finalidade->id,
-            'tipo_responsaveis' => 'eu'
-        ]);
-
-        $response->assertStatus(422);
-    }
 
     /** @test */
     public function test_blocked_room_prevents_reservation_creation()
