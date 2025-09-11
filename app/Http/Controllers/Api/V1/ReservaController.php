@@ -8,6 +8,7 @@ use App\Http\Requests\Api\StoreReservaRequest;
 use App\Http\Requests\Api\UpdateReservaRequest;
 use App\Http\Requests\Api\ApproveReservaRequest;
 use App\Http\Resources\V1\ReservaResource;
+use App\Http\Resources\V1\SimpleReservaResource;
 use App\Models\Finalidade;
 use App\Models\Reserva;
 use App\Models\ResponsavelReserva;
@@ -17,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 use Uspdev\Replicado\Pessoa;
 
 class ReservaController extends Controller
@@ -78,6 +80,62 @@ class ReservaController extends Controller
                ]
            ], 500);
        }
+    }
+
+    /**
+     * Retorna reservas aprovadas e pendentes para uma sala específica em uma data específica.
+     * Endpoint otimizado para verificação de conflitos durante importação em massa.
+     * 
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function getByRoomAndDate(Request $request): JsonResponse
+    {
+        try {
+            // Validate request parameters
+            $validator = Validator::make($request->all(), [
+                'sala_id' => 'required|integer',
+                'data' => 'required|date_format:Y-m-d',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'error' => 'Validation failed',
+                    'message' => 'Parâmetros inválidos.',
+                    'details' => [
+                        'type' => 'validation_error',
+                        'code' => 'invalid_parameters',
+                        'errors' => $validator->errors()
+                    ]
+                ], 422);
+            }
+
+            $salaId = $request->input('sala_id');
+            $data = $request->input('data');
+
+            // Query reservas filtering by sala_id, data and status (aprovada OR pendente)
+            $reservas = Reserva::where('sala_id', $salaId)
+                ->whereRaw('data = ?', [$data])
+                ->whereIn('status', ['aprovada', 'pendente'])
+                ->orderBy('horario_inicio')
+                ->get();
+
+            return response()->json([
+                'data' => SimpleReservaResource::collection($reservas)
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching reservations by room and date: ' . $e->getMessage());
+            
+            return response()->json([
+                'error' => 'Internal server error',
+                'message' => 'Erro ao buscar reservas. Tente novamente.',
+                'details' => [
+                    'type' => 'fetch_reservations_failed',
+                    'code' => 'internal_error'
+                ]
+            ], 500);
+        }
     }
 
     /**

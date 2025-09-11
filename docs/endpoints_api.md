@@ -1,5 +1,18 @@
 # *Endpoints* e *Responses* da API
 
+## Índice
+
+- [🔐 Autenticação](#-autenticação)
+- [📋 Endpoints Públicos](#-endpoints-públicos-sem-autenticação)
+- [📋 Endpoints Protegidos](#-endpoints-protegidos-com-autenticação)
+  - [Consulta Otimizada de Reservas](#consulta-otimizada-de-reservas)
+  - [Gestão de Reservas](#gestão-de-reservas)
+  - [Status de Reservas](#status-de-reservas)
+- [🔄 Reservas Recorrentes](#-reservas-recorrentes-ac6)
+- [🔍 Códigos de Erro Detalhados](#-códigos-de-erro-detalhados)
+
+---
+
 ## 🔐 Autenticação
 
 A API utiliza **Laravel Sanctum** para autenticação baseada em tokens. Para acessar endpoints protegidos, você deve incluir o token de acesso no cabeçalho `Authorization`.
@@ -614,6 +627,79 @@ Retry-After: 57
 ---
 
 ## 📋 Endpoints Protegidos (com autenticação)
+
+### Consulta Otimizada de Reservas
+
+**GET** `/api/v1/reservas/by-room-and-date` *(protegido)*
+
+Retorna reservas aprovadas e pendentes para uma sala específica em uma data específica. Endpoint otimizado para verificação de conflitos durante importação em massa, resolvendo problemas de rate limiting da API pública.
+
+**Parâmetros de Query:**
+- `sala_id` (integer, obrigatório): ID da sala a ser consultada
+- `data` (string, obrigatório): Data da consulta no formato Y-m-d (ex: 2024-09-20)
+
+**Autorização:**
+- Requer token de autenticação válido
+- Aplica throttle do grupo `reservations` (limites mais altos para operações em massa)
+
+**Filtros Aplicados:**
+- Apenas reservas com status `aprovada` OU `pendente`
+- Ordenadas por `horario_inicio`
+- Retorna apenas campos essenciais para otimização
+
+**Exemplo de Request:**
+```http
+GET /api/v1/reservas/by-room-and-date?sala_id=15&data=2024-09-20
+Authorization: Bearer 1|A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0
+Accept: application/json
+```
+
+**Exemplo de Response (200 OK) - Com reservas encontradas:**
+```json
+{
+    "data": [
+        {
+            "id": 101,
+            "nome": "Reunião de Departamento",
+            "horario_inicio": "15:00",
+            "horario_fim": "17:00"
+        },
+        {
+            "id": 102,
+            "nome": "Aula de MAC0110",
+            "horario_inicio": "10:00",
+            "horario_fim": "12:00"
+        }
+    ]
+}
+```
+
+**Exemplo de Response (200 OK) - Sem reservas na data:**
+```json
+{
+    "data": []
+}
+```
+
+**Formato de Horário:**
+- Campos `horario_inicio` e `horario_fim` formatados como `G:i` (ex: '9:00', '14:30')
+- Remove zeros desnecessários (9:00 ao invés de 09:00)
+
+**Casos de Uso:**
+- Verificação de conflitos em importação em massa de reservas
+- Validação de disponibilidade antes de criar reservas
+- Integração sistema-a-sistema com alto volume de consultas
+
+**Errors:**
+- `401`: Token de autenticação inválido ou expirado
+- `422`: Parâmetros inválidos (sala_id ou data ausentes/incorretos)
+- `429`: Rate limiting excedido (respeita limites do grupo `reservations`)
+- `500`: Erro interno do servidor
+
+**Rate Limiting:**
+Este endpoint utiliza o throttle `reservations`, que oferece limites mais generosos para usuários com roles de sistema (ex: `bulk-importer`, `admin`) conforme configurado em `API_RATE_LIMIT_RESERVATIONS_BULK_ROLES`.
+
+---
 
 ### Gestão de Reservas
 

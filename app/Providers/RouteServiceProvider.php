@@ -57,7 +57,19 @@ class RouteServiceProvider extends ServiceProvider
     protected function configureRateLimiting()
     {
         RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(60)->by(optional($request->user())->id ?: $request->ip());
+            $user = $request->user();
+            $perMinute = $user ? config('api.rate_limits.api.authenticated.per_minute.max_attempts', 1000) : config('api.rate_limits.api.guest.per_minute.max_attempts', 30);
+            return Limit::perMinute($perMinute)->by($user?->id ?: $request->ip());
+        });
+        
+        RateLimiter::for('reservations', function (Request $request) {
+            $user = $request->user();
+            if ($user && $user->hasAnyRole(['admin', 'bulk-importer', 'system-integration'])) {
+                $perMinute = config('api.rate_limits.reservations.bulk_user.per_minute.max_attempts', 2000);
+            } else {
+                $perMinute = $user ? config('api.rate_limits.reservations.regular_user.per_minute.max_attempts', 30) : config('api.rate_limits.reservations.guest.per_minute.max_attempts', 20);
+            }
+            return Limit::perMinute($perMinute)->by($user?->id ?: $request->ip());
         });
     }
 }

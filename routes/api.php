@@ -53,6 +53,9 @@ Route::prefix('v1')->group(function(){
         // Endpoints de consulta de reservas do usuário
         Route::get('reservas/my', [ReservaController::class, 'myReservations']);
         
+        // Endpoint otimizado para consulta de reservas por sala/data (para sistema de importação)
+        Route::get('reservas/by-room-and-date', [ReservaController::class, 'getByRoomAndDate']);
+        
         // CRUD de reservas
         Route::post('reservas', [ReservaController::class, 'store']);
         Route::put('reservas/{reserva}', [ReservaController::class, 'update']);
