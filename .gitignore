@@ -1,25 +1,47 @@
+# Dependências de projeto
 /node_modules
-/public/hot
-/public/storage
-/storage/*.key
 /vendor
+
+# Arquivos de ambiente e sensíveis
 .env
 .env.backup
 .env.testing
 .env.dusk.local
+
+# Arquivos de configuração de deploy específicos do ambiente
+docker-compose.prod.yml
+docker-compose.homolog.yml
+
+# Dados de runtime do Docker
+/docker/mysql/
+/docker/redis/
+
+# Arquivos de log e cache do Laravel e outros
+/public/hot
+/public/storage
+/storage/*.key
+storage/logs/*
+!storage/logs/.gitignore
+bootstrap/cache/*
+!bootstrap/cache/.gitignore
+
+# Arquivos de cache e log de ferramentas
 .phpunit.result.cache
-Homestead.json
-Homestead.yaml
 npm-debug.log
 yarn-error.log
+
+# Arquivos de IDEs e do sistema operacional
 *.swp
-composer.lock
+.DS_Store
+Thumbs.db
+
+# Ativos publicados
 /public/vendor/
 
-# Lando
+# Ferramentas de ambiente de desenvolvimento local
+Homestead.json
+Homestead.yaml
 .lando.yml
 Dockerfile.custom
 php.ini
-
-# DDEV
 .ddev
