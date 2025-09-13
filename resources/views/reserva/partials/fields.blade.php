@@ -102,7 +102,15 @@
                     <td>{{ $reserva->user->name }} - {{ $reserva->user->codpes }}</td>
                     <td>{{$reserva->responsaveis->count() > 0 ? $reserva->responsaveis->pluck('nome')->implode(', ') : 'Sem responsáveis'}}</td>
                     <td>{{ $reserva->data }}</td>
-                    <td>{{ $reserva->horario_inicio }} a {{ $reserva->horario_fim }}</td>
+                    <td>
+                        @if($reserva->horario_inicio && $reserva->horario_fim)
+                            {{ $reserva->horario_inicio }} a {{ $reserva->horario_fim }}
+                        @elseif($reserva->day_times)
+                            <span class="text-muted">Horários distintos por dia</span>
+                        @else
+                            <span class="text-muted">Horários não definidos</span>
+                        @endif
+                    </td>
                     <td>
                         <a href="/salas/{{ $reserva->sala->id }}">{{  $reserva->sala->nome  }}</a>
                     </td>
@@ -120,14 +128,88 @@
 
         @if($reserva->irmaos())
             <div class="card-body">
-                <b>Recorrências:</b>
-                @php 
-                    $reservas_array = $reserva->irmaos()->toArray();
-                @endphp
-                
-                @foreach($reservas_array as $key => $reservaIterator)
-                    <a href="/reservas/{{ $reservaIterator['id'] }}">{{ $reservaIterator['data'] }}</a>@if( $key !== count($reservas_array) -1 ),@endif
-                @endforeach
+                <div class="alert alert-info">
+                    <h6><strong>Esta reserva faz parte de um bloco de reservas recorrentes</strong></h6>
+
+                    @if($reserva->parent_id == $reserva->id)
+                        <p class="mb-2">
+                            <i class="fa fa-info-circle"></i>
+                            Você está visualizando a <strong>reserva principal</strong> do bloco.
+                        </p>
+                    @else
+                        <p class="mb-2">
+                            <i class="fa fa-info-circle"></i>
+                            Esta é uma ocorrência individual.
+                            <a href="/reservas/{{ $reserva->parent_id }}" class="alert-link">
+                                Clique aqui para ver a reserva principal
+                            </a>
+                        </p>
+                    @endif
+
+                    @if($reserva->parent_id == $reserva->id && $reserva->day_times)
+                        <div class="mb-3">
+                            <strong>Padrão de horários distintos por dia:</strong>
+                            <ul class="mb-0">
+                                @php
+                                    $days_map = [
+                                        '1' => 'Segunda-feira',
+                                        '2' => 'Terça-feira',
+                                        '3' => 'Quarta-feira',
+                                        '4' => 'Quinta-feira',
+                                        '5' => 'Sexta-feira',
+                                        '6' => 'Sábado',
+                                        '7' => 'Domingo'
+                                    ];
+                                @endphp
+                                @foreach($reserva->day_times as $day => $times)
+                                    <li>{{ $days_map[$day] }}: {{ $times['start'] }} às {{ $times['end'] }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+
+                    <strong>Todas as ocorrências deste bloco:</strong>
+                    @php
+                        $reservas_array = $reserva->irmaos()->toArray();
+                        usort($reservas_array, function($a, $b) {
+                            return strtotime(str_replace('/', '-', $a['data'])) - strtotime(str_replace('/', '-', $b['data']));
+                        });
+                    @endphp
+
+                    <div class="row mt-2">
+                        @foreach($reservas_array as $reservaIterator)
+                            <div class="col-md-4 mb-2">
+                                <div class="card {{ $reservaIterator['id'] == $reserva->id ? 'border-primary' : '' }}">
+                                    <div class="card-body p-2">
+                                        <small>
+                                            <a href="/reservas/{{ $reservaIterator['id'] }}"
+                                               class="{{ $reservaIterator['id'] == $reserva->id ? 'text-primary font-weight-bold' : '' }}">
+                                                {{ $reservaIterator['data'] }}
+                                            </a>
+                                            <br>
+                                            @if($reservaIterator['horario_inicio'] && $reservaIterator['horario_fim'])
+                                                {{ $reservaIterator['horario_inicio'] }} - {{ $reservaIterator['horario_fim'] }}
+                                            @else
+                                                <span class="text-muted">Ver padrão acima</span>
+                                            @endif
+                                            @if($reservaIterator['id'] == $reserva->id)
+                                                <span class="badge badge-primary">Atual</span>
+                                            @endif
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <i class="fa fa-exclamation-triangle"></i>
+                            <strong>Atenção:</strong> Para alterar o padrão de horários, é necessário cancelar todo o bloco e criar uma nova reserva recorrente.
+                            Você pode cancelar apenas esta ocorrência específica usando o botão "Excluir" acima.
+                        </small>
+                    </div>
+                </div>
             </div>
         @endif
         <br>

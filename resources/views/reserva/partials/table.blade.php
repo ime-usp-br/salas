@@ -26,7 +26,15 @@
             @forelse($reservas as $reserva)
                 <tr>
                     <td>{{ $reserva->data }}</td>
-                    <td>{{ $reserva->horario_inicio }} - {{$reserva->horario_fim}}</td>
+                    <td>
+                        @if($reserva->horario_inicio && $reserva->horario_fim)
+                            {{ $reserva->horario_inicio }} - {{ $reserva->horario_fim }}
+                        @elseif($reserva->day_times)
+                            <span class="text-muted small">Horários distintos</span>
+                        @else
+                            <span class="text-muted small">N/A</span>
+                        @endif
+                    </td>
                     <td><a href="/salas/{{ $reserva->sala_id }}">{{ $reserva->sala->nome }}</a></td>
                     <td>{{ $reserva->sala->categoria->nome }}</td>
                     <td><div class="dot ml-4" style="background-color: {{$reserva->status == 'pendente' ? config('salas.cores.pendente'): ($reserva->finalidade->cor ?? config('salas.cores.semFinalidade'))}};"></div></td>

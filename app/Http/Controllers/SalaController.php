@@ -89,6 +89,10 @@ class SalaController extends Controller
         $eventos = [];
 
         foreach ($sala->reservas as $reserva) {
+            // Skip reservas with NULL horarios (parent reservas with day_times)
+            if ($reserva->inicio === null || $reserva->fim === null) {
+                continue;
+            }
 
             $eventos[] = [
                 'title' => $reserva->nome,

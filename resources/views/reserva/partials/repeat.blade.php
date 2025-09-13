@@ -19,3 +19,55 @@
         <small class="form-text text-muted">Formato: 30/12/2021</small>
     </div>
 </div>
+
+<div id="per_day_times_container" style="display: none;">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <b>Horários específicos por dia</b>
+                    <small class="form-text text-muted">Configure horários diferentes para cada dia da semana.</small>
+                </div>
+                <div class="card-body">
+                    @php
+                        $days = [
+                            '1' => 'Segunda-feira',
+                            '2' => 'Terça-feira',
+                            '3' => 'Quarta-feira',
+                            '4' => 'Quinta-feira',
+                            '5' => 'Sexta-feira',
+                            '6' => 'Sábado',
+                            '7' => 'Domingo'
+                        ];
+                        $existing_day_times = json_decode($reserva->day_times ?? '{}', true);
+                    @endphp
+
+                    @foreach($days as $day_number => $day_name)
+                    <div class="day-time-row" id="day_times_{{ $day_number }}" style="display: none;">
+                        @if(!$loop->first)
+                            <hr class="my-3">
+                        @endif
+                        <div class="row">
+                            <div class="col-sm-3">
+                                <label><b>{{ $day_name }}</b></label>
+                            </div>
+                            <div class="col-sm-4">
+                                <label class="required">Horário de início</label>
+                                <input class="form-control" type="text" name="day_times[{{ $day_number }}][start]"
+                                       value="{{ old('day_times.' . $day_number . '.start', $existing_day_times[$day_number]['start'] ?? '') }}">
+                                <small class="form-text text-muted">Formato: 9:00</small>
+                            </div>
+                            <div class="col-sm-4">
+                                <label class="required">Horário de fim</label>
+                                <input class="form-control" type="text" name="day_times[{{ $day_number }}][end]"
+                                       value="{{ old('day_times.' . $day_number . '.end', $existing_day_times[$day_number]['end'] ?? '') }}">
+                                <small class="form-text text-muted">Formato: 11:00</small>
+                            </div>
+                        </div>
+                    </div>
+                    @endforeach
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
