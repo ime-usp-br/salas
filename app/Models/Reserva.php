@@ -18,6 +18,7 @@ class Reserva extends Model implements Auditable
     
     protected $casts = [
         'extras' => 'json',
+        'day_times' => 'json',
     ];
 
     public function setDataAttribute($value)
@@ -83,6 +84,9 @@ class Reserva extends Model implements Auditable
      */
     public function getInicioAttribute()
     {
+        if (is_null($this->horario_inicio)) {
+            return null;
+        }
         return Carbon::createFromFormat('d/m/Y H:i', $this->data.' '.$this->horario_inicio);
     }
 
@@ -92,6 +96,9 @@ class Reserva extends Model implements Auditable
      */
     public function getFimAttribute()
     {
+        if (is_null($this->horario_fim)) {
+            return null;
+        }
         return Carbon::createFromFormat('d/m/Y H:i', $this->data.' '.$this->horario_fim);
     }
 

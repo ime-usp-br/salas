@@ -36,9 +36,9 @@ class verifyRoomAvailability implements Rule
      * @return bool
      */
     public function passes($attribute, $value)
-    { 
-        // o campo $value é o dia/mês/ano da reserva 
-        $this->check($value);
+    {
+        // o campo $value é o dia/mês/ano da reserva
+        $this->check($value, null); // No dayOfWeek for single reservations
 
         if ($this->reserva->repeat_days && $this->reserva->repeat_until) {
             // Parse initial date with format detection
@@ -69,7 +69,7 @@ class verifyRoomAvailability implements Rule
             foreach ($period as $date) {
                 // Vamos passar por todos dias, mas só validar e criar a reserva nos dias da semana marcados em repeat_days
                 if (in_array($date->dayOfWeek, $this->reserva->repeat_days)) {
-                    $this->check($date->format('Y-m-d')); // Use Y-m-d format for consistency
+                    $this->check($date->format('Y-m-d'), $date->dayOfWeek); // Pass day of week for per-day time lookup
                     $this->quantidade_de_reservas++;
                 }
             }
@@ -99,7 +99,7 @@ class verifyRoomAvailability implements Rule
         return $this->message;
     }
 
-    private function check($day)
+    private function check($day, $dayOfWeek = null)
     {
         // 0. ignorar na validação as reservas filhas
         $filhas = []; // caso de novas reservas
@@ -121,7 +121,7 @@ class verifyRoomAvailability implements Rule
                 $data = Carbon::parse($day);
             }
         }
-        
+
         // Enhanced business validation: exclude rejected reservations from conflicts
         $reservas = Reserva::whereDate('data', '=', $data)
             ->where('sala_id', $this->reserva->sala_id)
@@ -133,11 +133,21 @@ class verifyRoomAvailability implements Rule
             return true;
         }
 
-        // 3. Se há conflitos vamos montar a string $conflicts indicando-os
+        // 3. Determine which times to use (per-day or global)
+        $horario_inicio = $this->reserva->horario_inicio;
+        $horario_fim = $this->reserva->horario_fim;
+
+        // If we have day_times and this is for a specific day of week, use per-day times
+        if ($dayOfWeek && isset($this->reserva->day_times[$dayOfWeek])) {
+            $horario_inicio = $this->reserva->day_times[$dayOfWeek]['start'];
+            $horario_fim = $this->reserva->day_times[$dayOfWeek]['end'];
+        }
+
+        // 4. Se há conflitos vamos montar a string $conflicts indicando-os
         // Use the same data format detection for time creation
         $dayFormatted = $data->format('d/m/Y');
-        $inicio = Carbon::createFromFormat('d/m/Y H:i', $dayFormatted.' '.$this->reserva->horario_inicio);
-        $fim = Carbon::createFromFormat('d/m/Y H:i', $dayFormatted.' '.$this->reserva->horario_fim);
+        $inicio = Carbon::createFromFormat('d/m/Y H:i', $dayFormatted.' '.$horario_inicio);
+        $fim = Carbon::createFromFormat('d/m/Y H:i', $dayFormatted.' '.$horario_fim);
 
         $desejado = CarbonPeriod::between($inicio, $fim);
 

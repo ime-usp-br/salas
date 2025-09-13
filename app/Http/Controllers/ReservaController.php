@@ -180,18 +180,48 @@ class ReservaController extends Controller
         $created = '';
         if (array_key_exists('repeat_days', $validated) && array_key_exists('repeat_until', $validated)) {
             $reserva->parent_id = $reserva->id;
+
+            // Store day_times configuration if provided
+            if (isset($validated['day_times'])) {
+                $reserva->day_times = $validated['day_times'];
+                // When using day_times, parent reservation has NULL horario fields
+                $reserva->horario_inicio = null;
+                $reserva->horario_fim = null;
+            }
+
             $reserva->save();
 
-            $inicio = Carbon::createFromFormat('d/m/Y', $validated['data'])->addDays(1);
+            $inicio = Carbon::createFromFormat('d/m/Y', $validated['data']);
             $fim = Carbon::createFromFormat('d/m/Y', $validated['repeat_until']);
 
             $period = CarbonPeriod::between($inicio, $fim);
 
             foreach ($period as $date) {
                 if (in_array($date->dayOfWeek, $validated['repeat_days'])) {
+                    // Skip creating a child reservation if date matches the parent reservation date
+                    // The parent reservation already represents the initial occurrence
+                    if ($date->format('d/m/Y') === $validated['data']) {
+                        // Update parent reservation with appropriate times if using day_times
+                        if (isset($validated['day_times'][$date->dayOfWeek])) {
+                            $reserva->horario_inicio = $validated['day_times'][$date->dayOfWeek]['start'];
+                            $reserva->horario_fim = $validated['day_times'][$date->dayOfWeek]['end'];
+                            $reserva->save();
+                        }
+                        $created .= "<li><a href='/reservas/{$reserva->id}'> {$date->format('d/m/Y')}- {$reserva->nome}</a></li>";
+                        continue;
+                    }
+
                     $new = $reserva->replicate();
                     $new->parent_id = $reserva->id;
                     $new->data = $date->format('d/m/Y');
+
+                    // Use per-day times if available, otherwise use global times
+                    if (isset($validated['day_times'][$date->dayOfWeek])) {
+                        $new->horario_inicio = $validated['day_times'][$date->dayOfWeek]['start'];
+                        $new->horario_fim = $validated['day_times'][$date->dayOfWeek]['end'];
+                    }
+                    // If no per-day times, global times are already set from parent reservation
+
                     $new->save();
                     $new->responsaveis()->sync($responsaveis->pluck('id'));
                     $created .= "<li><a href='/reservas/{$new->id}'> {$date->format('d/m/Y')}- {$new->nome}</a></li>";
@@ -378,15 +408,34 @@ class ReservaController extends Controller
             }
 
             // criar novas revervas
-            $inicio = Carbon::createFromFormat('d/m/Y', $validated['data'])->addDays(1);
+            $inicio = Carbon::createFromFormat('d/m/Y', $validated['data']);
             $fim = Carbon::createFromFormat('d/m/Y', $validated['repeat_until']);
 
             $period = CarbonPeriod::between($inicio, $fim);
             foreach ($period as $date) {
                 if (in_array($date->dayOfWeek, $validated['repeat_days'])) {
+                    // Skip creating a child reservation if date matches the parent reservation date
+                    // The parent reservation already represents the initial occurrence
+                    if ($date->format('d/m/Y') === $validated['data']) {
+                        // Update parent reservation with appropriate times if using day_times
+                        if (isset($validated['day_times'][$date->dayOfWeek])) {
+                            $reserva->horario_inicio = $validated['day_times'][$date->dayOfWeek]['start'];
+                            $reserva->horario_fim = $validated['day_times'][$date->dayOfWeek]['end'];
+                            $reserva->save();
+                        }
+                        continue;
+                    }
+
                     $new = $reserva->replicate();
                     $new->parent_id = $reserva->id;
                     $new->data = $date->format('d/m/Y');
+
+                    // Use per-day times if available, otherwise use global times
+                    if (isset($validated['day_times'][$date->dayOfWeek])) {
+                        $new->horario_inicio = $validated['day_times'][$date->dayOfWeek]['start'];
+                        $new->horario_fim = $validated['day_times'][$date->dayOfWeek]['end'];
+                    }
+
                     $new->save();
                 }
             }
