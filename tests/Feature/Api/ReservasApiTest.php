@@ -130,14 +130,17 @@ class ReservasApiTest extends TestCase
         
         $reservaData = [
             'nome' => 'Reunião Recorrente',
-            'data' => $start_date->format('Y-m-d'), 
-            'horario_inicio' => '10:00',
-            'horario_fim' => '11:00',
+            'data' => $start_date->format('Y-m-d'),
             'sala_id' => $this->sala->id,
             'finalidade_id' => $this->finalidade->id,
             'tipo_responsaveis' => 'eu',
             'repeat_days' => [1, 3, 5], // Monday, Wednesday, Friday
-            'repeat_until' => $end_date->format('Y-m-d')
+            'repeat_until' => $end_date->format('Y-m-d'),
+            'day_times' => [
+                '1' => ['start' => '10:00', 'end' => '11:00'], // Monday
+                '3' => ['start' => '10:00', 'end' => '11:00'], // Wednesday
+                '5' => ['start' => '10:00', 'end' => '11:00']  // Friday
+            ]
         ];
 
         $response = $this->postJson('/api/v1/reservas', $reservaData);
@@ -159,7 +162,7 @@ class ReservasApiTest extends TestCase
     }
 
     /** @test */
-    public function test_user_can_update_own_reserva()
+    public function test_update_reserva_is_disabled_for_immutability()
     {
         Sanctum::actingAs($this->user);
 
@@ -176,45 +179,58 @@ class ReservasApiTest extends TestCase
 
         $response = $this->putJson("/api/v1/reservas/{$reserva->id}", $updateData);
 
-        $response->assertStatus(200)
-            ->assertJsonStructure([
-                'data',
-                'message'
-            ])
+        $response->assertStatus(405)
             ->assertJson([
-                'message' => 'Reserva atualizada com sucesso.'
+                'error' => 'Method Not Allowed',
+                'message' => 'As reservas são imutáveis via API. Para alterar uma reserva, exclua-a e crie uma nova.',
+                'details' => [
+                    'type' => 'immutability_policy',
+                    'code' => 'update_not_allowed',
+                    'method' => 'PUT',
+                    'suggested_workflow' => [
+                        '1. DELETE /api/v1/reservas/{id} - Excluir a reserva existente',
+                        '2. POST /api/v1/reservas - Criar uma nova reserva com os dados corretos'
+                    ]
+                ]
             ]);
 
+        // Ensure the original data remains unchanged
         $this->assertDatabaseHas('reservas', [
             'id' => $reserva->id,
-            'nome' => 'Reunião Atualizada',
-            'descricao' => 'Nova descrição'
+            'nome' => $reserva->nome,
+            'descricao' => $reserva->descricao
         ]);
     }
 
     /** @test */
-    public function test_user_cannot_update_other_users_reserva()
+    public function test_patch_reserva_is_also_disabled_for_immutability()
     {
-        // Create two regular non-admin users
-        $otherUser = User::factory()->create(); // No admin role
-        $regularUser = User::factory()->create(); // No admin role
-        Sanctum::actingAs($regularUser);
+        Sanctum::actingAs($this->user);
 
         $reserva = Reserva::factory()->create([
-            'user_id' => $otherUser->id,
+            'user_id' => $this->user->id,
             'sala_id' => $this->sala->id,
             'finalidade_id' => $this->finalidade->id
         ]);
 
-        $response = $this->putJson("/api/v1/reservas/{$reserva->id}", [
-            'nome' => 'Tentativa de hack'
+        $response = $this->patchJson("/api/v1/reservas/{$reserva->id}", [
+            'nome' => 'Tentativa de patch'
         ]);
 
-        $response->assertStatus(403);
+        $response->assertStatus(405)
+            ->assertJson([
+                'error' => 'Method Not Allowed',
+                'message' => 'As reservas são imutáveis via API. Para alterar uma reserva, exclua-a e crie uma nova.',
+                'details' => [
+                    'type' => 'immutability_policy',
+                    'code' => 'update_not_allowed',
+                    'method' => 'PATCH'
+                ]
+            ]);
     }
 
     /** @test */
-    public function test_admin_can_update_any_reserva()
+    public function test_even_admin_cannot_update_reserva_due_to_immutability()
     {
         Sanctum::actingAs($this->admin);
 
@@ -228,16 +244,23 @@ class ReservasApiTest extends TestCase
             'nome' => 'Editado pelo Admin'
         ]);
 
-        // If Spatie Permission is not properly configured, admin user won't have special privileges
-        // This test will verify either admin privileges work, or it fails with 403 (which is expected)
-        $this->assertContains($response->status(), [200, 403]);
-        
-        if ($response->status() === 200) {
-            $this->assertDatabaseHas('reservas', [
-                'id' => $reserva->id,
-                'nome' => 'Editado pelo Admin'
+        // Even admin cannot update due to immutability policy
+        $response->assertStatus(405)
+            ->assertJson([
+                'error' => 'Method Not Allowed',
+                'message' => 'As reservas são imutáveis via API. Para alterar uma reserva, exclua-a e crie uma nova.',
+                'details' => [
+                    'type' => 'immutability_policy',
+                    'code' => 'update_not_allowed',
+                    'method' => 'PUT'
+                ]
             ]);
-        }
+
+        // Ensure the original data remains unchanged
+        $this->assertDatabaseHas('reservas', [
+            'id' => $reserva->id,
+            'nome' => $reserva->nome
+        ]);
     }
 
     /** @test */
@@ -614,7 +637,7 @@ class ReservasApiTest extends TestCase
     }
 
     /** @test */
-    public function test_update_reserva_with_responsaveis()
+    public function test_update_reserva_with_responsaveis_is_disabled()
     {
         Sanctum::actingAs($this->user);
 
@@ -632,15 +655,21 @@ class ReservasApiTest extends TestCase
 
         $response = $this->putJson("/api/v1/reservas/{$reserva->id}", $updateData);
 
-        $response->assertStatus(200)
-            ->assertJsonStructure([
-                'data',
-                'message'
+        $response->assertStatus(405)
+            ->assertJson([
+                'error' => 'Method Not Allowed',
+                'message' => 'As reservas são imutáveis via API. Para alterar uma reserva, exclua-a e crie uma nova.',
+                'details' => [
+                    'type' => 'immutability_policy',
+                    'code' => 'update_not_allowed',
+                    'method' => 'PUT'
+                ]
             ]);
 
+        // Ensure the original data remains unchanged
         $this->assertDatabaseHas('reservas', [
             'id' => $reserva->id,
-            'tipo_responsaveis' => 'externo'
+            'tipo_responsaveis' => 'eu'
         ]);
     }
 
@@ -898,6 +927,117 @@ class ReservasApiTest extends TestCase
                     'type' => 'invalid_purge_date_format',
                     'code' => 'validation_error'
                 ]
+            ]);
+    }
+
+    /** @test */
+    public function test_create_recurring_reserva_with_day_times()
+    {
+        Sanctum::actingAs($this->user);
+
+        $response = $this->postJson('/api/v1/reservas', [
+            'nome' => 'Curso com Horários Distintos',
+            'descricao' => 'Curso recorrente com horários diferentes por dia',
+            'data' => Carbon::tomorrow()->format('Y-m-d'),
+            'sala_id' => $this->sala->id,
+            'finalidade_id' => $this->finalidade->id,
+            'tipo_responsaveis' => 'eu',
+            'repeat_days' => [1, 3], // Monday and Wednesday
+            'repeat_until' => Carbon::tomorrow()->addWeeks(4)->format('Y-m-d'),
+            'day_times' => [
+                '1' => ['start' => '08:00', 'end' => '10:00'], // Monday
+                '3' => ['start' => '14:00', 'end' => '16:00']  // Wednesday
+            ]
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJsonStructure([
+                'data' => [
+                    'id',
+                    'nome',
+                    'sala',
+                    'finalidade',
+                    'data',
+                    'horario_inicio',
+                    'horario_fim',
+                    'status',
+                    'recurrent',
+                    'instances_created',
+                    'recurring_details' => [
+                        'repeat_days',
+                        'repeat_until',
+                        'day_times_used',
+                        'day_times'
+                    ]
+                ],
+                'meta'
+            ])
+            ->assertJson([
+                'data' => [
+                    'nome' => 'Curso com Horários Distintos',
+                    'recurrent' => true,
+                    'recurring_details' => [
+                        'repeat_days' => [1, 3],
+                        'day_times_used' => true,
+                        'day_times' => [
+                            '1' => ['start' => '08:00', 'end' => '10:00'],
+                            '3' => ['start' => '14:00', 'end' => '16:00']
+                        ]
+                    ]
+                ]
+            ]);
+
+        $this->assertTrue($response->json('data.instances_created') > 1);
+    }
+
+    /** @test */
+    public function test_day_times_validation_requires_all_repeat_days()
+    {
+        Sanctum::actingAs($this->user);
+
+        // Missing day_times for day 3 (Wednesday)
+        $response = $this->postJson('/api/v1/reservas', [
+            'nome' => 'Curso Incompleto',
+            'data' => Carbon::tomorrow()->format('Y-m-d'),
+            'sala_id' => $this->sala->id,
+            'finalidade_id' => $this->finalidade->id,
+            'tipo_responsaveis' => 'eu',
+            'repeat_days' => [1, 3], // Monday and Wednesday
+            'repeat_until' => Carbon::tomorrow()->addWeeks(2)->format('Y-m-d'),
+            'day_times' => [
+                '1' => ['start' => '08:00', 'end' => '10:00'] // Missing Wednesday (3)
+            ]
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['day_times'])
+            ->assertJsonFragment([
+                'day_times' => ['Horário não definido para Quarta (dia 3) em day_times.']
+            ]);
+    }
+
+    /** @test */
+    public function test_day_times_prohibited_for_single_reservations()
+    {
+        Sanctum::actingAs($this->user);
+
+        $response = $this->postJson('/api/v1/reservas', [
+            'nome' => 'Reunião Única',
+            'data' => Carbon::tomorrow()->format('Y-m-d'),
+            'horario_inicio' => '14:00',
+            'horario_fim' => '16:00',
+            'sala_id' => $this->sala->id,
+            'finalidade_id' => $this->finalidade->id,
+            'tipo_responsaveis' => 'eu',
+            'day_times' => [
+                '1' => ['start' => '14:00', 'end' => '16:00']
+            ]
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['day_times'])
+            ->assertJsonFragment([
+                'day_times' => ['O campo day_times só pode ser usado em reservas recorrentes (com repeat_days e repeat_until).']
             ]);
     }
 

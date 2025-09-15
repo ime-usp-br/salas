@@ -56,9 +56,11 @@ Route::prefix('v1')->group(function(){
         // Endpoint otimizado para consulta de reservas por sala/data (para sistema de importação)
         Route::get('reservas/by-room-and-date', [ReservaController::class, 'getByRoomAndDate']);
         
-        // CRUD de reservas
+        // CRUD de reservas - UPDATE operations disabled for immutability
+        Route::get('reservas/{reserva}', [ReservaController::class, 'show']);
         Route::post('reservas', [ReservaController::class, 'store']);
         Route::put('reservas/{reserva}', [ReservaController::class, 'update']);
+        Route::patch('reservas/{reserva}', [ReservaController::class, 'patch']);
         Route::delete('reservas/{reserva}', [ReservaController::class, 'destroy']);
         
         // Endpoints para aprovação/rejeição de reservas - Rate limiting para admin

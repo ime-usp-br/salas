@@ -139,6 +139,39 @@ class ReservaController extends Controller
     }
 
     /**
+     * Display the specified reservation.
+     *
+     * @param Reserva $reserva
+     * @return JsonResponse
+     */
+    public function show(Reserva $reserva): JsonResponse
+    {
+        try {
+            // Load relationships for the resource
+            $reserva->load(['sala', 'finalidade', 'responsaveis', 'user']);
+
+            return response()->json([
+                'data' => new ReservaResource($reserva),
+                'meta' => [
+                    'success' => true
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching reservation: ' . $e->getMessage());
+
+            return response()->json([
+                'error' => 'Internal server error',
+                'message' => 'Erro ao buscar a reserva. Tente novamente.',
+                'details' => [
+                    'type' => 'fetch_reservation_failed',
+                    'code' => 'internal_error'
+                ]
+            ], 500);
+        }
+    }
+
+    /**
      * Store a newly created reserva in storage.
      *
      * @param StoreReservaRequest $request
@@ -168,27 +201,43 @@ class ReservaController extends Controller
                 $start_date = Carbon::createFromFormat('Y-m-d', $validatedData['data']);
                 $end_date = Carbon::createFromFormat('Y-m-d', $validatedData['repeat_until']);
                 $repeat_days = $validatedData['repeat_days'];
+                $day_times = $validatedData['day_times'] ?? null;
 
                 $current_date = $start_date->copy();
                 $first_reserva = null;
 
                 while ($current_date->lte($end_date)) {
                     if (in_array($current_date->dayOfWeek, $repeat_days)) {
+                        // Get the appropriate times for this day
+                        $dayOfWeek = $current_date->dayOfWeek;
+
+                        if ($day_times && isset($day_times[$dayOfWeek])) {
+                            // Use specific times for this day from day_times
+                            $horario_inicio = $day_times[$dayOfWeek]['start'];
+                            $horario_fim = $day_times[$dayOfWeek]['end'];
+                        } else {
+                            // Fallback to traditional times (for backward compatibility)
+                            $horario_inicio = $validatedData['horario_inicio'] ?? null;
+                            $horario_fim = $validatedData['horario_fim'] ?? null;
+                        }
+
                         $reserva_data = array_merge($validatedData, [
                             'data' => $current_date->format('Y-m-d'),
+                            'horario_inicio' => $horario_inicio,
+                            'horario_fim' => $horario_fim,
                             'user_id' => $user->id,
                             'status' => $status,
                         ]);
 
                         // Remove API-specific fields that shouldn't be stored
-                        unset($reserva_data['repeat_days'], $reserva_data['repeat_until']);
+                        unset($reserva_data['repeat_days'], $reserva_data['repeat_until'], $reserva_data['day_times']);
 
                         $reserva = Reserva::create($reserva_data);
 
                         if ($first_reserva === null) {
                             $first_reserva = $reserva;
                             $parent_id = $reserva->id;
-                            
+
                             // Update parent_id for the first reservation
                             $reserva->update(['parent_id' => $parent_id]);
                         } else {
@@ -212,7 +261,7 @@ class ReservaController extends Controller
                 ]);
 
                 // Remove API-specific fields
-                unset($reserva_data['repeat_days'], $reserva_data['repeat_until']);
+                unset($reserva_data['repeat_days'], $reserva_data['repeat_until'], $reserva_data['day_times']);
 
                 $reserva = Reserva::create($reserva_data);
                 $reservas_created[] = $reserva;
@@ -265,6 +314,7 @@ class ReservaController extends Controller
                 $response_data['data']['recurring_details'] = [
                     'repeat_days' => $validatedData['repeat_days'] ?? null,
                     'repeat_until' => $validatedData['repeat_until'] ?? null,
+                    'day_times_used' => !empty($validatedData['day_times']),
                     'first_date' => $firstReserva->data,
                     'last_date' => end($reservas_created)->data,
                 ];
@@ -272,6 +322,10 @@ class ReservaController extends Controller
                     'from' => $firstReserva->data,
                     'to' => end($reservas_created)->data
                 ];
+
+                if (!empty($validatedData['day_times'])) {
+                    $response_data['data']['recurring_details']['day_times'] = $validatedData['day_times'];
+                }
             }
 
             return response()->json($response_data, 201);
@@ -316,7 +370,7 @@ class ReservaController extends Controller
     }
 
     /**
-     * Update the specified reserva in storage.
+     * Update operations are disabled for API immutability policy.
      *
      * @param UpdateReservaRequest $request
      * @param Reserva $reserva
@@ -324,79 +378,43 @@ class ReservaController extends Controller
      */
     public function update(UpdateReservaRequest $request, Reserva $reserva): JsonResponse
     {
-        try {
-            DB::beginTransaction();
+        return $this->immutabilityErrorResponse('PUT');
+    }
 
-            $validatedData = $request->validated();
+    /**
+     * Partial update operations are also disabled for API immutability policy.
+     *
+     * @param Request $request
+     * @param Reserva $reserva
+     * @return JsonResponse
+     */
+    public function patch(Request $request, Reserva $reserva): JsonResponse
+    {
+        return $this->immutabilityErrorResponse('PATCH');
+    }
 
-            // Handle status changes if sala is changed and requires approval
-            if (isset($validatedData['sala_id']) && $validatedData['sala_id'] != $reserva->sala_id) {
-                $new_sala = Sala::findOrFail($validatedData['sala_id']);
-                if ($new_sala->restricao && $new_sala->restricao->aprovacao) {
-                    $validatedData['status'] = 'pendente';
-                }
-            }
-
-            // Remove the approval task if it exists before updating
-            $reserva->removerTarefa_AprovacaoAutomatica();
-
-            // Update the reservation
-            $reserva->update($validatedData);
-
-            // Reschedule approval task if needed
-            if ($reserva->status === 'pendente') {
-                $reserva->reagendarTarefa_AprovacaoAutomatica();
-            }
-
-            // Handle responsaveis if needed
-            if (isset($validatedData['tipo_responsaveis'])) {
-                $this->handleResponsaveis([$reserva], $validatedData);
-            }
-
-            DB::commit();
-
-            return response()->json([
-                'data' => new ReservaResource($reserva->fresh()),
-                'message' => 'Reserva atualizada com sucesso.'
-            ]);
-
-        } catch (\Illuminate\Database\QueryException $e) {
-            DB::rollback();
-            Log::error('Database error updating reserva: ' . $e->getMessage());
-            
-            // Check for common database constraint violations
-            if (str_contains($e->getMessage(), 'foreign key constraint')) {
-                return response()->json([
-                    'error' => 'Validation failed',
-                    'message' => 'Referência inválida detectada (sala ou finalidade inexistente).',
-                    'details' => [
-                        'type' => 'constraint_violation',
-                        'code' => 'foreign_key_constraint'
-                    ]
-                ], 422);
-            }
-            
-            return response()->json([
-                'error' => 'Database error',
-                'message' => 'Erro na base de dados. Verifique os dados e tente novamente.',
-                'details' => [
-                    'type' => 'database_error',
-                    'code' => 'query_exception'
-                ]
-            ], 500);
-        } catch (\Exception $e) {
-            DB::rollback();
-            Log::error('Error updating reserva: ' . $e->getMessage());
-            
-            return response()->json([
-                'error' => 'Internal server error',
-                'message' => 'Não foi possível atualizar a reserva. Tente novamente.',
-                'details' => [
-                    'type' => 'internal_error',
-                    'code' => 'unexpected_exception'
-                ]
-            ], 500);
-        }
+    /**
+     * Returns a standardized error response for disabled update operations.
+     *
+     * @param string $method
+     * @return JsonResponse
+     */
+    private function immutabilityErrorResponse(string $method): JsonResponse
+    {
+        return response()->json([
+            'error' => 'Method Not Allowed',
+            'message' => 'As reservas são imutáveis via API. Para alterar uma reserva, exclua-a e crie uma nova.',
+            'details' => [
+                'type' => 'immutability_policy',
+                'code' => 'update_not_allowed',
+                'method' => $method,
+                'suggested_workflow' => [
+                    '1. DELETE /api/v1/reservas/{id} - Excluir a reserva existente',
+                    '2. POST /api/v1/reservas - Criar uma nova reserva com os dados corretos'
+                ],
+                'documentation' => 'https://docs.example.com/api/reservas#immutability-policy'
+            ]
+        ], 405);
     }
 
     /**
