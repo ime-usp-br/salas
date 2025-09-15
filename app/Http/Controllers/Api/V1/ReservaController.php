@@ -186,6 +186,9 @@ class ReservaController extends Controller
             $user = $request->user();
             $sala = Sala::findOrFail($validatedData['sala_id']);
 
+            // Additional conflict validation as a safety net
+            $this->validateReservationConflicts($validatedData);
+
             // Determine initial status based on room approval rules
             $status = 'aprovada'; // Default
             if ($sala->restricao && $sala->restricao->aprovacao) {
@@ -802,6 +805,114 @@ class ReservaController extends Controller
         } catch (\Exception $e) {
             Log::warning('Conflict validation failed: ' . $e->getMessage());
             throw new \Exception('Não foi possível validar conflitos: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Validate that the reservation doesn't conflict with existing approved/pending reservations
+     *
+     * @param array $validatedData
+     * @throws \Exception
+     */
+    private function validateReservationConflicts(array $validatedData): void
+    {
+        $salaId = $validatedData['sala_id'];
+        $data = $validatedData['data'];
+
+        // Check if it's a recurring reservation
+        $isRecurring = !empty($validatedData['repeat_days']) && !empty($validatedData['repeat_until']);
+
+        if ($isRecurring) {
+            $this->validateRecurringReservationConflicts($validatedData);
+        } else {
+            $this->validateSingleReservationConflicts($validatedData);
+        }
+    }
+
+    /**
+     * Validate single reservation conflicts
+     *
+     * @param array $validatedData
+     * @throws \Exception
+     */
+    private function validateSingleReservationConflicts(array $validatedData): void
+    {
+        $salaId = $validatedData['sala_id'];
+        $data = $validatedData['data'];
+        $horarioInicio = $validatedData['horario_inicio'];
+        $horarioFim = $validatedData['horario_fim'];
+
+        $conflicts = Reserva::where('sala_id', $salaId)
+            ->whereRaw('data = ?', [$data])
+            ->whereIn('status', ['aprovada', 'pendente'])
+            ->get();
+
+        foreach ($conflicts as $conflict) {
+            if ($this->timePeriodsOverlap($horarioInicio, $horarioFim, $conflict->horario_inicio, $conflict->horario_fim)) {
+                throw new \Exception("Conflito detectado com a reserva '{$conflict->nome}' das {$conflict->horario_inicio} às {$conflict->horario_fim}.");
+            }
+        }
+    }
+
+    /**
+     * Validate recurring reservation conflicts
+     *
+     * @param array $validatedData
+     * @throws \Exception
+     */
+    private function validateRecurringReservationConflicts(array $validatedData): void
+    {
+        $salaId = $validatedData['sala_id'];
+        $startDate = Carbon::createFromFormat('Y-m-d', $validatedData['data']);
+        $endDate = Carbon::createFromFormat('Y-m-d', $validatedData['repeat_until']);
+        $repeatDays = $validatedData['repeat_days'];
+        $dayTimes = $validatedData['day_times'] ?? [];
+
+        $period = \Carbon\CarbonPeriod::between($startDate, $endDate);
+
+        foreach ($period as $date) {
+            $dayOfWeek = $date->dayOfWeek;
+
+            if (in_array($dayOfWeek, $repeatDays) && isset($dayTimes[$dayOfWeek])) {
+                $dayTime = $dayTimes[$dayOfWeek];
+                $dateFormatted = $date->format('Y-m-d');
+
+                $conflicts = Reserva::where('sala_id', $salaId)
+                    ->whereRaw('data = ?', [$dateFormatted])
+                    ->whereIn('status', ['aprovada', 'pendente'])
+                    ->get();
+
+                foreach ($conflicts as $conflict) {
+                    if ($this->timePeriodsOverlap($dayTime['start'], $dayTime['end'], $conflict->horario_inicio, $conflict->horario_fim)) {
+                        throw new \Exception("Conflito detectado na data {$date->format('d/m/Y')} com a reserva '{$conflict->nome}' das {$conflict->horario_inicio} às {$conflict->horario_fim}.");
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Check if two time periods overlap
+     *
+     * @param string $start1
+     * @param string $end1
+     * @param string $start2
+     * @param string $end2
+     * @return bool
+     */
+    private function timePeriodsOverlap($start1, $end1, $start2, $end2): bool
+    {
+        try {
+            $period1Start = Carbon::createFromFormat('H:i', $start1);
+            $period1End = Carbon::createFromFormat('H:i', $end1);
+            $period2Start = Carbon::createFromFormat('H:i', $start2);
+            $period2End = Carbon::createFromFormat('H:i', $end2);
+
+            // Two periods overlap if one starts before the other ends and vice versa
+            return $period1Start->lt($period2End) && $period2Start->lt($period1End);
+        } catch (\Exception $e) {
+            // If we can't parse the times, assume conflict to be safe
+            return true;
         }
     }
 
