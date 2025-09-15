@@ -234,35 +234,45 @@ Exemplo de _response_:
 
 ---
 
-- `/api/v1/finalidades`: retorna todas as finalidades cadastradas no sistema.
+### Finalidades
+
+- `/api/v1/finalidades`: retorna todas as finalidades cadastradas no sistema com suas cores.
 
 Exemplo de _response_:
 ```json
 {
     "data": [{
         "id": 1,
-        "legenda": "Graduação"
+        "legenda": "Graduação",
+        "cor": "#FFFCB7"
     }, {
         "id": 2,
-        "legenda": "Pós-Graduação"
+        "legenda": "Pós-Graduação",
+        "cor": "#C7F3BA"
     }, {
         "id": 3,
-        "legenda": "Especialização"
+        "legenda": "Especialização",
+        "cor": "#BAE3F3"
     }, {
         "id": 4,
-        "legenda": "Extensão"
+        "legenda": "Extensão",
+        "cor": "#EFDFCF"
     }, {
         "id": 5,
-        "legenda": "Defesa"
+        "legenda": "Defesa",
+        "cor": "#EEC9F1"
     }, {
         "id": 6,
-        "legenda": "Qualificação"
+        "legenda": "Qualificação",
+        "cor": "#CCCC99"
     }, {
         "id": 7,
-        "legenda": "Reunião"
+        "legenda": "Reunião",
+        "cor": "#F78B83"
     }, {
         "id": 8,
-        "legenda": "Evento"
+        "legenda": "Evento",
+        "cor": "#FBCCAC"
     }]
 }
 ```
