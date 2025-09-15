@@ -22,24 +22,41 @@ class ApiReservationConflictRule implements Rule
 
     public function passes($attribute, $value)
     {
-        // Skip if we don't have the necessary data
-        if (!$this->request->has('sala_id') || !$this->request->has('horario_inicio') || !$this->request->has('horario_fim')) {
-            return true;
+        // Reset conflicts array
+        $this->conflicts = [];
+
+        // Must have required fields - fail validation if missing
+        if (!$this->request->has('sala_id')) {
+            $this->message = 'Sala é obrigatória para verificar conflitos.';
+            return false;
         }
 
-        $this->conflicts = [];
-        
-        // Check for conflicts on the primary date
-        $this->checkDateConflicts($value);
+        // Check if it's a recurring reservation
+        $isRecurring = $this->request->has('repeat_days') && $this->request->has('repeat_until') &&
+                      !empty($this->request->repeat_days) && !empty($this->request->repeat_until);
 
-        // If it's a recurring reservation, check all dates in the series
-        if ($this->request->has('repeat_days') && $this->request->has('repeat_until') && 
-            !empty($this->request->repeat_days) && !empty($this->request->repeat_until)) {
+        if ($isRecurring) {
+            // For recurring reservations, we need day_times
+            if (!$this->request->has('day_times') || empty($this->request->day_times)) {
+                $this->message = 'Horários por dia (day_times) são obrigatórios para reservas recorrentes.';
+                return false;
+            }
+
+            // Validate recurring conflicts
             $this->checkRecurringConflicts($value);
+        } else {
+            // For single reservations, we need horario_inicio and horario_fim
+            if (!$this->request->has('horario_inicio') || !$this->request->has('horario_fim')) {
+                $this->message = 'Horários de início e fim são obrigatórios para verificar conflitos.';
+                return false;
+            }
+
+            // Check for conflicts on the primary date
+            $this->checkDateConflicts($value);
         }
 
         if (!empty($this->conflicts)) {
-            $this->message = 'Reserva não foi criada porque conflita com: <ul>' . implode('', $this->conflicts) . '</ul>';
+            $this->message = 'Conflito de horário detectado com as seguintes reservas: <ul>' . implode('', $this->conflicts) . '</ul>';
             return false;
         }
 
@@ -128,18 +145,68 @@ class ApiReservationConflictRule implements Rule
 
     private function checkRecurringConflicts($startDate)
     {
-        // This method is called for recurring reservations to check the entire series
-        // The actual work is done in checkRecurringDateConflicts() which is called from checkDateConflicts()
-        return;
+        try {
+            $start = Carbon::createFromFormat('Y-m-d', $startDate);
+            $end = Carbon::createFromFormat('Y-m-d', $this->request->repeat_until);
+        } catch (\Exception $e) {
+            return; // Skip validation if date format is invalid
+        }
+
+        $repeatDays = is_array($this->request->repeat_days) ? $this->request->repeat_days : [];
+        $dayTimes = is_array($this->request->day_times) ? $this->request->day_times : [];
+        $period = CarbonPeriod::between($start, $end);
+
+        // Check each date in our recurring series
+        foreach ($period as $date) {
+            $dayOfWeek = $date->dayOfWeek;
+
+            if (in_array($dayOfWeek, $repeatDays) && isset($dayTimes[$dayOfWeek])) {
+                $dayTime = $dayTimes[$dayOfWeek];
+
+                // Validate this specific date with its specific times
+                $this->checkSingleDateConflictsWithTimes(
+                    $date,
+                    $dayTime['start'],
+                    $dayTime['end']
+                );
+            }
+        }
+    }
+
+    private function checkSingleDateConflictsWithTimes($inputDate, $startTime, $endTime)
+    {
+        // Get existing reservations for this specific date
+        $existingReservations = Reserva::whereDate('data', '=', $inputDate)
+            ->where('sala_id', $this->request->sala_id)
+            ->where('status', '!=', 'rejeitada')
+            ->when($this->reservaId, function ($query) {
+                return $query->where('id', '!=', $this->reservaId)
+                    ->where('parent_id', '!=', $this->reservaId);
+            })
+            ->get();
+
+        if (!$existingReservations->isEmpty()) {
+            $this->checkTimeOverlapsWithTimes($existingReservations, $inputDate, $startTime, $endTime);
+        }
     }
 
     private function checkTimeOverlaps($existingReservations, $inputDate)
     {
+        $this->checkTimeOverlapsWithTimes(
+            $existingReservations,
+            $inputDate,
+            $this->request->horario_inicio,
+            $this->request->horario_fim
+        );
+    }
+
+    private function checkTimeOverlapsWithTimes($existingReservations, $inputDate, $startTime, $endTime)
+    {
         $dayFormatted = $inputDate->format('Y-m-d');
-        
+
         try {
-            $requestStart = Carbon::createFromFormat('Y-m-d H:i', $dayFormatted . ' ' . $this->request->horario_inicio);
-            $requestEnd = Carbon::createFromFormat('Y-m-d H:i', $dayFormatted . ' ' . $this->request->horario_fim);
+            $requestStart = Carbon::createFromFormat('Y-m-d H:i', $dayFormatted . ' ' . $startTime);
+            $requestEnd = Carbon::createFromFormat('Y-m-d H:i', $dayFormatted . ' ' . $endTime);
         } catch (\Exception $e) {
             return; // Skip validation if time format is invalid
         }
@@ -147,15 +214,12 @@ class ApiReservationConflictRule implements Rule
         foreach ($existingReservations as $reservation) {
             // Convert reservation data format to match our input format
             try {
-                // Handle both d/m/Y and Y-m-d formats for compatibility
-                if (strpos($reservation->data, '/') !== false) {
-                    // Format: d/m/Y (legacy format)
-                    $reservationDate = Carbon::createFromFormat('d/m/Y', $reservation->data)->format('Y-m-d');
-                } else {
-                    // Format: Y-m-d (API format)
-                    $reservationDate = $reservation->data;
+                // Get the raw date from database (Y-m-d format)
+                $reservationDate = $reservation->getRawOriginal('data');
+                if (!$reservationDate) {
+                    continue; // Skip if no date
                 }
-                
+
                 $reservationStart = Carbon::createFromFormat('Y-m-d H:i', $reservationDate . ' ' . $reservation->horario_inicio);
                 $reservationEnd = Carbon::createFromFormat('Y-m-d H:i', $reservationDate . ' ' . $reservation->horario_fim);
             } catch (\Exception $e) {
@@ -165,9 +229,12 @@ class ApiReservationConflictRule implements Rule
             // Check if the time periods overlap
             if ($this->periodsOverlap($requestStart, $requestEnd, $reservationStart, $reservationEnd)) {
                 $this->conflicts[] = sprintf(
-                    '<li><a href="/reservas/%d">%s</a></li>',
+                    '<li>Reserva "%s" (ID: %d) - %s às %s em %s</li>',
+                    $reservation->nome,
                     $reservation->id,
-                    $reservation->nome
+                    $reservation->horario_inicio,
+                    $reservation->horario_fim,
+                    $inputDate->format('d/m/Y')
                 );
             }
         }
