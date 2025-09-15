@@ -801,6 +801,8 @@ As reservas no sistema podem ter os seguintes status:
 
 Cria uma nova reserva ou série de reservas recorrentes no sistema.
 
+#### 📋 **Parâmetros para Reservas Simples**
+
 **Parâmetros Obrigatórios:**
 - `nome` (string): Título da reserva
 - `data` (string): Data inicial no formato Y-m-d (ex: 2024-09-15)
@@ -815,9 +817,33 @@ Cria uma nova reserva ou série de reservas recorrentes no sistema.
 - `responsaveis_unidade` (array): IDs dos responsáveis da unidade (obrigatório quando tipo_responsaveis = "unidade")
 - `responsaveis_externo` (array): Nomes dos responsáveis externos (obrigatório quando tipo_responsaveis = "externo")
 
-**Parâmetros de Recorrência:**
+#### 🔄 **Parâmetros para Reservas Recorrentes**
+
+**⚠️ Importante**: Para reservas recorrentes, os campos `horario_inicio` e `horario_fim` são **opcionais** e **serão ignorados** quando `day_times` for fornecido.
+
+**Parâmetros de Recorrência Obrigatórios:**
 - `repeat_days` (array): Dias da semana para repetição (0=domingo, 1=segunda, ..., 6=sábado)
 - `repeat_until` (string): Data final da recorrência no formato Y-m-d (obrigatório com repeat_days)
+- `day_times` (object): **Obrigatório** para reservas recorrentes - Define horários específicos para cada dia
+
+#### ⏰ **Estrutura do Campo `day_times`**
+
+O campo `day_times` deve ser um objeto JSON onde:
+- **Chaves**: Números representando dias da semana (0=domingo, 1=segunda, ..., 6=sábado)
+- **Valores**: Objetos contendo `start` (horário início) e `end` (horário fim) no formato H:i
+
+**Exemplo de `day_times`:**
+```json
+{
+    "1": { "start": "08:00", "end": "10:00" },  // Segunda-feira
+    "3": { "start": "14:00", "end": "16:00" }   // Quarta-feira
+}
+```
+
+**⚠️ Regras importantes:**
+- Todos os dias especificados em `repeat_days` devem ter entrada correspondente em `day_times`
+- Horários devem estar no formato H:i (ex: "08:00", "14:30")
+- Horário de fim deve ser posterior ao horário de início
 
 **Validações de Recorrência:**
 - **Período Máximo**: 6 meses entre data inicial e repeat_until
@@ -843,24 +869,48 @@ Content-Type: application/json
 }
 ```
 
-**Exemplo - Reserva Recorrente:**
+**Exemplo - Reserva Recorrente com Horários Distintos:**
 ```json
 POST /api/v1/reservas
 Authorization: Bearer 1|TOKEN
 Content-Type: application/json
 
 {
-    "nome": "Reunião Semanal da Equipe",
-    "descricao": "Reunião recorrente às segundas e quartas",
+    "nome": "Curso de Extensão",
+    "descricao": "Curso com horários diferentes por dia",
     "data": "2024-09-15",
-    "horario_inicio": "14:00",
-    "horario_fim": "16:00",
     "sala_id": 1,
-    "finalidade_id": 7,
+    "finalidade_id": 4,
     "tipo_responsaveis": "unidade",
     "responsaveis_unidade": [123456, 789012],
     "repeat_days": [1, 3],
-    "repeat_until": "2024-12-15"
+    "repeat_until": "2024-12-15",
+    "day_times": {
+        "1": { "start": "08:00", "end": "10:00" },
+        "3": { "start": "14:00", "end": "16:00" }
+    }
+}
+```
+
+**Exemplo - Reserva Recorrente com Horário Uniforme:**
+```json
+POST /api/v1/reservas
+Authorization: Bearer 1|TOKEN
+Content-Type: application/json
+
+{
+    "nome": "Grupo de Estudo",
+    "descricao": "Encontro semanal com mesmo horário",
+    "data": "2024-09-16",
+    "sala_id": 1,
+    "finalidade_id": 1,
+    "tipo_responsaveis": "eu",
+    "repeat_days": [2, 4],
+    "repeat_until": "2024-11-27",
+    "day_times": {
+        "2": { "start": "09:00", "end": "11:00" },
+        "4": { "start": "09:00", "end": "11:00" }
+    }
 }
 ```
 
@@ -896,24 +946,24 @@ Content-Type: application/json
 }
 ```
 
-**Response - Reserva Recorrente (201 Created):**
+**Response - Reserva Recorrente com day_times (201 Created):**
 ```json
 {
     "data": {
         "id": 157,
-        "nome": "Reunião Semanal da Equipe",
-        "descricao": "Reunião recorrente às segundas e quartas",
+        "nome": "Curso de Extensão",
+        "descricao": "Curso com horários diferentes por dia",
         "sala": {
             "id": 1,
             "nome": "Sala 01"
         },
         "finalidade": {
-            "id": 7,
-            "nome": "Reunião"
+            "id": 4,
+            "nome": "Extensão"
         },
         "data": "15/09/2024",
-        "horario_inicio": "14:00",
-        "horario_fim": "16:00",
+        "horario_inicio": "08:00",
+        "horario_fim": "10:00",
         "status": "aprovada",
         "user_id": 123,
         "created_at": "2024-08-26 10:30:45",
@@ -923,8 +973,13 @@ Content-Type: application/json
         "recurring_details": {
             "repeat_days": [1, 3],
             "repeat_until": "2024-12-15",
+            "day_times_used": true,
+            "day_times": {
+                "1": { "start": "08:00", "end": "10:00" },
+                "3": { "start": "14:00", "end": "16:00" }
+            },
             "first_date": "15/09/2024",
-            "last_date": "15/12/2024"
+            "last_date": "13/12/2024"
         }
     },
     "meta": {
@@ -933,7 +988,7 @@ Content-Type: application/json
         "success": true,
         "date_range": {
             "from": "15/09/2024",
-            "to": "15/12/2024"
+            "to": "13/12/2024"
         }
     }
 }
@@ -1102,6 +1157,136 @@ Authorization: Bearer 1|TOKEN
     }
 }
 ```
+
+**day_times Obrigatório para Recorrência (422):**
+```json
+{
+    "message": "The given data was invalid.",
+    "errors": {
+        "day_times": ["O campo day_times é obrigatório para reservas recorrentes. Defina os horários de cada dia da semana."]
+    }
+}
+```
+
+**day_times com Horário Inválido (422):**
+```json
+{
+    "message": "The given data was invalid.",
+    "errors": {
+        "day_times": ["Horário não definido para Segunda (dia 1) em day_times."]
+    }
+}
+```
+
+### Consulta de Reservas Individuais
+
+**GET** `/api/v1/reservas/{id}` *(protegido)*
+
+Retorna os detalhes de uma reserva específica. Para reservas criadas com `day_times`, os campos `horario_inicio` e `horario_fim` sempre refletem os horários específicos daquela instância individual.
+
+**Exemplo de Request:**
+```http
+GET /api/v1/reservas/157
+Authorization: Bearer 1|TOKEN
+```
+
+**Response (200 OK):**
+```json
+{
+    "data": {
+        "id": 157,
+        "nome": "Curso de Extensão",
+        "descricao": "Curso com horários diferentes por dia",
+        "sala": {
+            "id": 1,
+            "nome": "Sala 01"
+        },
+        "finalidade": {
+            "id": 4,
+            "legenda": "Extensão"
+        },
+        "data": "2024-09-15",
+        "horario_inicio": "08:00",
+        "horario_fim": "10:00",
+        "status": "aprovada",
+        "tipo_responsaveis": "unidade",
+        "responsaveis": [
+            {
+                "id": 1,
+                "nome": "João da Silva",
+                "codpes": 123456
+            }
+        ],
+        "user": {
+            "id": 123,
+            "name": "Maria Santos",
+            "email": "maria@usp.br"
+        },
+        "recorrente": {
+            "is_recurrent": true,
+            "parent_id": 157,
+            "repeat_days": [1, 3],
+            "repeat_until": "2024-12-15"
+        },
+        "timestamps": {
+            "created_at": "2024-08-26T10:30:45.000000Z",
+            "updated_at": "2024-08-26T10:30:45.000000Z"
+        }
+    },
+    "meta": {
+        "success": true
+    }
+}
+```
+
+**Errors:**
+- `401`: Token de autenticação inválido
+- `404`: Reserva não encontrada
+- `500`: Erro interno do servidor
+
+### 🔒 Política de Imutabilidade da API
+
+**⚠️ IMPORTANTE**: A partir desta implementação, a API de reservas adota uma **política de imutabilidade**. Reservas **não podem ser editadas** via API.
+
+#### Endpoints Desabilitados
+
+**PUT** `/api/v1/reservas/{id}` - ❌ **DESABILITADO**
+**PATCH** `/api/v1/reservas/{id}` - ❌ **DESABILITADO**
+
+#### Fluxo de Trabalho para Alterações
+
+Para alterar uma reserva existente, use o fluxo:
+
+1. **DELETE** `/api/v1/reservas/{id}` - Excluir a reserva existente
+2. **POST** `/api/v1/reservas` - Criar uma nova reserva com os dados corretos
+
+#### Response para Tentativas de Edição
+
+Tentativas de usar PUT ou PATCH retornarão erro `405 Method Not Allowed`:
+
+```json
+{
+    "error": "Method Not Allowed",
+    "message": "As reservas são imutáveis via API. Para alterar uma reserva, exclua-a e crie uma nova.",
+    "details": {
+        "type": "immutability_policy",
+        "code": "update_not_allowed",
+        "method": "PUT",
+        "suggested_workflow": [
+            "1. DELETE /api/v1/reservas/{id} - Excluir a reserva existente",
+            "2. POST /api/v1/reservas - Criar uma nova reserva com os dados corretos"
+        ],
+        "documentation": "https://docs.example.com/api/reservas#immutability-policy"
+    }
+}
+```
+
+#### Justificativa da Política
+
+- **Consistência de Dados**: Evita estados inconsistentes em séries recorrentes
+- **Auditoria**: Mantém histórico completo de alterações
+- **Simplicidade**: Reduz complexidade de validação e conflitos
+- **Confiabilidade**: Elimina cenários de corrupção de dados
 
 ---
 # Tratamento de Erros Padronizados e Rate Limiting - Implementação

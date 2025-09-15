@@ -39,21 +39,21 @@ class StoreReservaRequest extends FormRequest
      */
     public function rules(): array
     {
+        $isRecurring = !empty($this->input('repeat_days')) && !empty($this->input('repeat_until'));
+
         $rules = [
             'nome' => 'required|string|max:255',
             'descricao' => 'nullable|string',
             'data' => [
-                'bail', 
-                'required', 
-                'date_format:Y-m-d', 
+                'bail',
+                'required',
+                'date_format:Y-m-d',
                 new ApiReservationConflictRule($this, 0)
             ],
-            'horario_inicio' => 'required|date_format:G:i',
-            'horario_fim' => 'required|date_format:G:i|after:horario_inicio',
             'sala_id' => [
-                'required', 
-                'integer', 
-                Rule::in(Sala::pluck('id')->toArray()), 
+                'required',
+                'integer',
+                Rule::in(Sala::pluck('id')->toArray()),
                 new RestricoesSalaRule($this),
                 new UserPermissionRule($this, 'create')
             ],
@@ -64,29 +64,29 @@ class StoreReservaRequest extends FormRequest
             'responsaveis_externo' => 'required_if:tipo_responsaveis,externo|nullable|array',
             'responsaveis_externo.*' => 'string|max:255',
             'repeat_until' => [
-                'required_with:repeat_days', 
-                'nullable', 
-                'date_format:Y-m-d', 
+                'required_with:repeat_days',
+                'nullable',
+                'date_format:Y-m-d',
                 'after_or_equal:data',
                 function ($attribute, $value, $fail) {
                     if ($value && $this->input('data')) {
                         try {
                             $startDate = Carbon::createFromFormat('Y-m-d', $this->input('data'));
                             $endDate = Carbon::createFromFormat('Y-m-d', $value);
-                            
+
                             // Maximum 6 months recurrence period
                             $monthsDiff = $startDate->diffInMonths($endDate);
                             if ($monthsDiff > 6) {
                                 $fail('O período de recorrência não pode exceder 6 meses.');
                                 return;
                             }
-                            
+
                             // Maximum 100 instances to prevent system overload
                             if ($this->input('repeat_days') && is_array($this->input('repeat_days'))) {
                                 $daysCount = count($this->input('repeat_days'));
                                 $weeks = $startDate->diffInWeeks($endDate);
                                 $estimatedInstances = $daysCount * ($weeks + 1); // +1 to include both start and end weeks
-                                
+
                                 if ($estimatedInstances > 100) {
                                     $fail('O padrão de recorrência resultaria em mais de 100 reservas. Reduza o período ou os dias da semana.');
                                     return;
@@ -106,6 +106,86 @@ class StoreReservaRequest extends FormRequest
             ],
             'repeat_days.*' => 'integer|between:0,6',
         ];
+
+        // Handle time fields based on whether it's recurring with day_times or not
+        if ($isRecurring) {
+            // For recurring reservations, day_times is required
+            $rules['day_times'] = [
+                'required',
+                'array',
+                'min:1',
+                function ($attribute, $value, $fail) {
+                    $repeatDays = $this->input('repeat_days', []);
+
+                    if (!is_array($value)) {
+                        $fail('O campo day_times deve ser um objeto com os horários de cada dia.');
+                        return;
+                    }
+
+                    // Validate that all repeat_days have corresponding day_times entries
+                    foreach ($repeatDays as $day) {
+                        if (!isset($value[$day])) {
+                            $dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                            $fail("Horário não definido para {$dayNames[$day]} (dia {$day}) em day_times.");
+                            return;
+                        }
+
+                        $dayTime = $value[$day];
+                        if (!isset($dayTime['start']) || !isset($dayTime['end'])) {
+                            $dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                            $fail("Horário de início (start) e fim (end) são obrigatórios para {$dayNames[$day]} em day_times.");
+                            return;
+                        }
+
+                        // Validate time format
+                        if (!preg_match('/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/', $dayTime['start'])) {
+                            $dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                            $fail("Formato de horário de início inválido para {$dayNames[$day]}. Use HH:MM (ex: 08:00).");
+                            return;
+                        }
+
+                        if (!preg_match('/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/', $dayTime['end'])) {
+                            $dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                            $fail("Formato de horário de fim inválido para {$dayNames[$day]}. Use HH:MM (ex: 16:00).");
+                            return;
+                        }
+
+                        // Validate that end time is after start time
+                        try {
+                            $start = Carbon::createFromFormat('H:i', $dayTime['start']);
+                            $end = Carbon::createFromFormat('H:i', $dayTime['end']);
+
+                            if ($end->lte($start)) {
+                                $dayNames = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                                $fail("O horário de fim deve ser posterior ao horário de início para {$dayNames[$day]}.");
+                                return;
+                            }
+                        } catch (\Exception $e) {
+                            $fail('Erro ao validar horários em day_times.');
+                            return;
+                        }
+                    }
+                }
+            ];
+
+            // For recurring reservations, horario_inicio and horario_fim are optional (will be ignored)
+            $rules['horario_inicio'] = 'nullable|date_format:G:i';
+            $rules['horario_fim'] = 'nullable|date_format:G:i';
+        } else {
+            // For single reservations, traditional time validation
+            $rules['horario_inicio'] = 'required|date_format:G:i';
+            $rules['horario_fim'] = 'required|date_format:G:i|after:horario_inicio';
+
+            // day_times is not allowed for single reservations
+            $rules['day_times'] = [
+                'prohibited',
+                function ($attribute, $value, $fail) {
+                    if ($value !== null) {
+                        $fail('O campo day_times só pode ser usado em reservas recorrentes (com repeat_days e repeat_until).');
+                    }
+                }
+            ];
+        }
 
         // Validate time restrictions for non-responsaveis
         $sala = Sala::find($this->sala_id);
@@ -182,6 +262,12 @@ class StoreReservaRequest extends FormRequest
             'sala_id.user_permission_rule' => 'Acesso negado: apenas administradores podem criar reservas via API.',
             'data.reservation_conflict_rule' => 'Conflito de horário: já existe uma reserva para esta sala no horário solicitado.',
             'data.verify_room_availability' => 'Sala não disponível: verifique se a sala não está bloqueada ou se há restrições de horário.',
+
+            // Day times validation messages
+            'day_times.required' => 'O campo day_times é obrigatório para reservas recorrentes. Defina os horários de cada dia da semana.',
+            'day_times.array' => 'O campo day_times deve ser um objeto JSON com os horários de cada dia.',
+            'day_times.min' => 'É necessário definir pelo menos um horário em day_times.',
+            'day_times.prohibited' => 'O campo day_times só pode ser usado em reservas recorrentes (com repeat_days e repeat_until).',
         ];
 
         // Add enhanced messages for extra fields with context
