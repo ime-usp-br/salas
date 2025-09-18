@@ -16,17 +16,18 @@ class Restricao extends Model
     protected $guarded = ['id'];
 
     protected $fillable = [
-        'tipo',
+        'tipo_restricao',
         'data_limite',
         'dias_limite',
         'dias_antecedencia',
         'duracao_minima',
         'duracao_maxima',
         'bloqueada',
+        'motivo_bloqueio',
         'sala_id',
         'periodo_letivo_id',
-        'aprovacao'
-
+        'aprovacao',
+        'prazo_aprovacao'
     ];
 
 
