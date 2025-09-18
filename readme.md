@@ -175,6 +175,60 @@ Ao utilizar o sistema de gerenciamento de conteúdo [Drupal](https://www.drupal.
 
 Com este módulo unido ao Drupal, é possível consumir os dados da API e apresentá-los em componentes da página, como views e blocos. Desta forma, os dados apresentados sempre estarão em sincronia com o sistema de reservas, visto que ao modificar as reservas no sistema de reservas, estas modificações também serão apresentadas via API.
 
+## Gerenciamento em Massa de Restrições de Salas
+
+Para facilitar a administração de múltiplas salas, o sistema oferece um comando Artisan que permite atualizar as restrições de data de várias salas simultaneamente.
+
+```bash
+php artisan salas:set-restriction-bulk --type=<TIPO> --value=<VALOR> [--category=<ID>]...
+```
+
+### Tipos de Restrição
+
+- **FIXA**: Define uma data limite fixa para reservas (formato: AAAA-MM-DD)
+- **AUTO**: Define um limite dinâmico em dias a partir da data atual
+- **PERIODO_LETIVO**: Associa as salas a um período letivo específico
+- **NENHUMA**: Remove todas as restrições de data
+
+### Exemplos de Uso
+
+**Definir data limite fixa para todas as salas:**
+```bash
+php artisan salas:set-restriction-bulk --type=FIXA --value=2025-12-31
+```
+
+**Definir limite dinâmico de 90 dias para salas de categorias específicas:**
+```bash
+php artisan salas:set-restriction-bulk --type=AUTO --value=90 --category=1 --category=3
+```
+
+**Associar salas ao período letivo:**
+```bash
+php artisan salas:set-restriction-bulk --type=PERIODO_LETIVO --value=2 --category=5
+```
+
+**Remover todas as restrições de data:**
+```bash
+php artisan salas:set-restriction-bulk --type=NENHUMA
+```
+
+**Executar sem confirmação interativa (útil para scripts):**
+```bash
+php artisan salas:set-restriction-bulk --type=FIXA --value=2025-12-31 --force
+```
+
+### Características do Comando
+
+- **Validação Completa**: Verifica tipos, valores e IDs de categorias antes da execução
+- **Confirmação Interativa**: Exibe resumo da operação e solicita confirmação do usuário
+- **Progresso Visual**: Mostra barra de progresso durante a execução
+- **Relatório Detalhado**: Apresenta estatísticas completas ao final da operação
+- **Preservação de Dados**: Mantém todas as outras configurações de restrição não relacionadas à data
+- **Transações Seguras**: Utiliza transações de banco de dados para garantir consistência
+- **Filtros por Categoria**: Permite aplicar restrições apenas a salas de categorias específicas
+
+**Importante**: O comando preserva todas as configurações existentes da sala (bloqueio, antecedência mínima, duração das reservas, aprovação, etc.), alterando apenas as restrições relacionadas às datas limite.
+
 # Como subir a aplicação
 
 ## Instalação
