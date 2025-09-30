@@ -13,8 +13,9 @@ docker-compose.prod.yml
 docker-compose.homolog.yml
 
 # Dados de runtime do Docker
-/docker/mysql/
+/docker/mysql/*
 /docker/redis/
+!docker/mysql/create-testing-database.sh
 
 # Arquivos de log e cache do Laravel e outros
 /public/hot
