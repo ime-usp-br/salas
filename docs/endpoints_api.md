@@ -8,6 +8,8 @@
   - [Consulta Otimizada de Reservas](#consulta-otimizada-de-reservas)
   - [Gestão de Reservas](#gestão-de-reservas)
   - [Status de Reservas](#status-de-reservas)
+  - [👥 Gestão de Usuários](#-gestão-de-usuários)
+  - [🔑 Gestão de Permissões Usuário-Categoria](#-gestão-de-permissões-usuário-categoria)
 - [🔄 Reservas Recorrentes](#-reservas-recorrentes-ac6)
 - [🔍 Códigos de Erro Detalhados](#-códigos-de-erro-detalhados)
 
@@ -800,6 +802,416 @@ As reservas no sistema podem ter os seguintes status:
 - **`rejeitada`**: Reserva negada pelos responsáveis da sala
 
 **Importante:** Apenas reservas com status `pendente` podem ser aprovadas ou rejeitadas através dos endpoints acima.
+
+---
+
+### 👥 Gestão de Usuários
+
+#### Buscar Usuário por Número USP
+
+**GET** `/api/v1/users?codpes={codpes}` *(protegido)*
+
+Busca um usuário pelo número USP (codpes). Útil para verificar se um usuário já existe no sistema antes de criá-lo.
+
+**Parâmetros de Query:**
+- `codpes` (integer, obrigatório): Número USP do usuário
+
+**Autorização:**
+- Requer token de autenticação válido
+- Aplica throttle do grupo `api` (100 req/min)
+
+**Exemplo de Request:**
+```http
+GET /api/v1/users?codpes=2803642
+Authorization: Bearer 1|A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0
+```
+
+**Exemplo de Response (200 OK) - Usuário encontrado:**
+```json
+{
+    "data": {
+        "id": 123,
+        "codpes": 2803642,
+        "name": "João da Silva",
+        "email": "joao.silva@usp.br",
+        "categorias": [
+            {
+                "id": 1,
+                "nome": "Padrão",
+                "vinculo_cadastrado": "Pessoas da unidade",
+                "setores_cadastrados": ["Assistência Técnica"],
+                "salas": []
+            }
+        ],
+        "created_at": "2025-10-01T10:30:00.000000Z",
+        "updated_at": "2025-10-01T10:30:00.000000Z"
+    }
+}
+```
+
+**Exemplo de Response (404 Not Found) - Usuário não existe:**
+```json
+{
+    "error": "Not Found",
+    "message": "Usuário não encontrado.",
+    "details": {
+        "type": "resource_not_found",
+        "code": "not_found"
+    }
+}
+```
+
+**Casos de Uso:**
+1. **Migração de Dados**: Verificar se usuário já existe antes de importar
+2. **Integração de Sistemas**: Buscar ID do usuário a partir do número USP
+3. **Validação**: Confirmar existência de usuário antes de associar permissões
+
+**Workflow Recomendado (Migração):**
+```
+1. GET /api/v1/users?codpes={codpes}
+   - Se 200 OK → usuário existe, usar o ID retornado
+   - Se 404 → usuário não existe, criar com POST /users
+2. PUT /api/v1/users/{id}/categorias
+   - Sincronizar categorias/permissões
+```
+
+**Errors:**
+- `401`: Token de autenticação inválido
+- `404`: Usuário não encontrado
+- `422`: Parâmetro codpes ausente ou não numérico
+- `500`: Erro interno do servidor
+
+---
+
+#### Criação de Usuários
+
+**POST** `/api/v1/users` *(protegido)*
+
+Cria um novo usuário no sistema. Útil para integração com sistemas externos e migração de dados.
+
+**Parâmetros:**
+- `codpes` (integer, obrigatório): Número USP do usuário
+- `name` (string, obrigatório): Nome completo do usuário (máx. 255 caracteres)
+- `email` (string, obrigatório): E-mail válido e único
+- `password` (string, opcional): Senha do usuário (mín. 8 caracteres). Se omitida, uma senha aleatória será gerada.
+
+**Autorização:**
+- Requer token de autenticação válido
+- Aplica throttle do grupo `api` (100 req/min)
+
+**Exemplo de Request:**
+```http
+POST /api/v1/users
+Authorization: Bearer 1|A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0
+Content-Type: application/json
+
+{
+    "codpes": 1234567,
+    "name": "João da Silva",
+    "email": "joao.silva@usp.br",
+    "password": "senha_segura_123"
+}
+```
+
+**Exemplo de Response (201 Created):**
+```json
+{
+    "data": {
+        "id": 123,
+        "codpes": 1234567,
+        "name": "João da Silva",
+        "email": "joao.silva@usp.br",
+        "categorias": [],
+        "created_at": "2025-10-01T10:30:00.000000Z",
+        "updated_at": "2025-10-01T10:30:00.000000Z"
+    },
+    "message": "Usuário criado com sucesso."
+}
+```
+
+**Errors:**
+- `401`: Token de autenticação inválido
+- `422`: Validação falhou (codpes ou email duplicado, campos obrigatórios ausentes)
+- `500`: Erro interno do servidor
+
+---
+
+#### Consulta de Usuário
+
+**GET** `/api/v1/users/{user}` *(protegido)*
+
+Retorna informações detalhadas de um usuário, incluindo suas categorias associadas.
+
+**Parâmetros:**
+- `{user}` (obrigatório): ID do usuário
+
+**Autorização:**
+- Requer token de autenticação válido
+
+**Exemplo de Request:**
+```http
+GET /api/v1/users/123
+Authorization: Bearer 1|TOKEN
+```
+
+**Exemplo de Response (200 OK):**
+```json
+{
+    "data": {
+        "id": 123,
+        "codpes": 1234567,
+        "name": "João da Silva",
+        "email": "joao.silva@usp.br",
+        "categorias": [
+            {
+                "id": 1,
+                "nome": "Padrão",
+                "vinculo_cadastrado": "Pessoas da unidade",
+                "setores_cadastrados": ["Assistência Técnica"],
+                "salas": []
+            },
+            {
+                "id": 2,
+                "nome": "Auditório",
+                "vinculo_cadastrado": "Pessoas da USP",
+                "setores_cadastrados": [],
+                "salas": []
+            }
+        ],
+        "created_at": "2025-10-01T10:30:00.000000Z",
+        "updated_at": "2025-10-01T10:30:00.000000Z"
+    }
+}
+```
+
+**Errors:**
+- `401`: Token de autenticação inválido
+- `404`: Usuário não encontrado
+- `500`: Erro interno do servidor
+
+---
+
+### 🔑 Gestão de Permissões Usuário-Categoria
+
+#### Listar Categorias do Usuário
+
+**GET** `/api/v1/users/{user}/categorias` *(protegido)*
+
+Retorna todas as categorias associadas a um usuário específico.
+
+**Parâmetros:**
+- `{user}` (obrigatório): ID do usuário
+
+**Autorização:**
+- Requer token de autenticação válido
+
+**Exemplo de Request:**
+```http
+GET /api/v1/users/123/categorias
+Authorization: Bearer 1|TOKEN
+```
+
+**Exemplo de Response (200 OK):**
+```json
+{
+    "data": {
+        "data": [
+            {
+                "id": 1,
+                "nome": "Padrão",
+                "vinculo_cadastrado": "Pessoas da unidade",
+                "setores_cadastrados": ["Assistência Técnica"],
+                "salas": []
+            },
+            {
+                "id": 2,
+                "nome": "Auditório",
+                "vinculo_cadastrado": "Pessoas da USP",
+                "setores_cadastrados": [],
+                "salas": []
+            }
+        ]
+    }
+}
+```
+
+**Errors:**
+- `401`: Token de autenticação inválido
+- `404`: Usuário não encontrado
+- `500`: Erro interno do servidor
+
+---
+
+#### Associar Categoria ao Usuário
+
+**POST** `/api/v1/users/{user}/categorias` *(protegido)*
+
+Associa uma categoria a um usuário. Esta operação é **idempotente**: se a associação já existe, retorna status 200 ao invés de 201.
+
+**Parâmetros:**
+- `{user}` (obrigatório): ID do usuário
+- `categoria_id` (integer, obrigatório): ID da categoria a ser associada
+
+**Autorização:**
+- Requer token de autenticação válido
+
+**Exemplo de Request:**
+```http
+POST /api/v1/users/123/categorias
+Authorization: Bearer 1|TOKEN
+Content-Type: application/json
+
+{
+    "categoria_id": 1
+}
+```
+
+**Exemplo de Response (201 Created) - Nova associação:**
+```json
+{
+    "data": {
+        "user_id": 123,
+        "categoria_id": 1,
+        "categoria_nome": "Padrão",
+        "created_at": "2025-10-01T10:30:00.000000Z"
+    },
+    "message": "Categoria associada com sucesso."
+}
+```
+
+**Exemplo de Response (200 OK) - Associação já existia (idempotência):**
+```json
+{
+    "data": {
+        "user_id": 123,
+        "categoria_id": 1,
+        "categoria_nome": "Padrão",
+        "created_at": "2025-09-15T08:20:00.000000Z"
+    },
+    "message": "Categoria já estava associada ao usuário."
+}
+```
+
+**Errors:**
+- `401`: Token de autenticação inválido
+- `404`: Usuário não encontrado
+- `422`: Categoria não existe ou categoria_id ausente
+- `500`: Erro interno do servidor
+
+---
+
+#### Remover Categoria do Usuário
+
+**DELETE** `/api/v1/users/{user}/categorias/{categoria}` *(protegido)*
+
+Remove a associação entre um usuário e uma categoria.
+
+**Parâmetros:**
+- `{user}` (obrigatório): ID do usuário
+- `{categoria}` (obrigatório): ID da categoria
+
+**Autorização:**
+- Requer token de autenticação válido
+
+**Exemplo de Request:**
+```http
+DELETE /api/v1/users/123/categorias/1
+Authorization: Bearer 1|TOKEN
+```
+
+**Exemplo de Response (200 OK):**
+```json
+{
+    "message": "Categoria removida com sucesso."
+}
+```
+
+**Errors:**
+- `401`: Token de autenticação inválido
+- `404`: Usuário, categoria ou associação não encontrada
+- `500`: Erro interno do servidor
+
+---
+
+#### Sincronizar Categorias do Usuário (Operação Bulk)
+
+**PUT** `/api/v1/users/{user}/categorias` *(protegido)*
+
+Sincroniza as categorias do usuário de forma atômica. Remove associações não listadas, adiciona novas e mantém existentes.
+
+**Parâmetros:**
+- `{user}` (obrigatório): ID do usuário
+- `categoria_ids` (array, obrigatório): Array de IDs de categorias (mínimo 1 item)
+
+**Autorização:**
+- Requer token de autenticação válido
+
+**Comportamento:**
+- Remove todas as associações que **não** estão no array
+- Adiciona novas associações para IDs que não existiam
+- Mantém associações que já existem
+- Operação é executada dentro de uma transação (tudo ou nada)
+
+**Exemplo de Request:**
+```http
+PUT /api/v1/users/123/categorias
+Authorization: Bearer 1|TOKEN
+Content-Type: application/json
+
+{
+    "categoria_ids": [1, 3]
+}
+```
+
+**Exemplo de Response (200 OK):**
+```json
+{
+    "data": {
+        "attached": [3],
+        "detached": {
+            "1": 2
+        },
+        "updated": []
+    },
+    "message": "Categorias sincronizadas com sucesso.",
+    "meta": {
+        "success": true
+    }
+}
+```
+
+**Descrição dos Campos de Response:**
+- `attached`: Array de IDs de categorias que foram adicionadas
+- `detached`: Object/Array com IDs de categorias que foram removidas
+- `updated`: Array de IDs de categorias que foram atualizadas (geralmente vazio)
+
+**Casos de Uso:**
+1. **Migração de Permissões**: Sincronizar permissões de sistemas legados (ex: Urano → Salas)
+2. **Gestão de Perfis**: Aplicar conjunto de permissões baseado em role (ADM, OPR, USR)
+3. **Atualização em Massa**: Atualizar permissões de múltiplos usuários programaticamente
+
+**Exemplo - Aplicar permissões de Administrador (todas as categorias):**
+```json
+{
+    "categoria_ids": [1, 2, 3]
+}
+```
+
+**Exemplo - Aplicar permissões de Usuário Padrão (apenas categoria básica):**
+```json
+{
+    "categoria_ids": [3]
+}
+```
+
+**Errors:**
+- `401`: Token de autenticação inválido
+- `404`: Usuário não encontrado
+- `422`: categoria_ids ausente, vazio ou contém IDs inválidos
+- `500`: Erro interno do servidor ou falha na transação
+
+**Rate Limiting:**
+Este endpoint utiliza o throttle `api`, oferecendo 100 requisições por minuto para operações autenticadas.
 
 ---
 

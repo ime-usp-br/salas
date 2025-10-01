@@ -3,6 +3,8 @@
 use App\Http\Controllers\Api\V1\CategoriaController;
 use App\Http\Controllers\Api\V1\FinalidadeController;
 use App\Http\Controllers\Api\V1\TokenController;
+use App\Http\Controllers\Api\V1\UserCategoriaController;
+use App\Http\Controllers\Api\V1\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\ReservaController;
@@ -74,11 +76,25 @@ Route::prefix('v1')->group(function(){
     Route::middleware(['auth:sanctum', 'throttle:bulk'])->group(function() {
         // Bulk creation of reservations
         Route::post('reservas/bulk', [ReservaController::class, 'bulkStore']);
-        
+
         // Bulk update of reservations
         Route::put('reservas/bulk', [ReservaController::class, 'bulkUpdate']);
-        
+
         // Bulk delete of reservations
         Route::delete('reservas/bulk', [ReservaController::class, 'bulkDestroy']);
+    });
+
+    // Endpoints para gerenciamento de usuários e permissões
+    Route::middleware(['auth:sanctum', 'throttle:api'])->group(function() {
+        // CRUD de Usuários
+        Route::get('users', [UserController::class, 'index']);
+        Route::post('users', [UserController::class, 'store']);
+        Route::get('users/{user}', [UserController::class, 'show']);
+
+        // Gerenciamento de Categorias por Usuário
+        Route::get('users/{user}/categorias', [UserCategoriaController::class, 'index']);
+        Route::post('users/{user}/categorias', [UserCategoriaController::class, 'attach']);
+        Route::put('users/{user}/categorias', [UserCategoriaController::class, 'sync']);
+        Route::delete('users/{user}/categorias/{categoria}', [UserCategoriaController::class, 'detach']);
     });
 });
