@@ -38,7 +38,12 @@ class verifyRoomAvailability implements Rule
     public function passes($attribute, $value)
     {
         // o campo $value é o dia/mês/ano da reserva
-        $this->check($value, null); // No dayOfWeek for single reservations
+
+        // Only check single date if this is NOT a recurring reservation
+        // Recurring reservations are validated in the loop below with proper dayOfWeek
+        if (!($this->reserva->repeat_days && $this->reserva->repeat_until)) {
+            $this->check($value, null); // No dayOfWeek for single reservations
+        }
 
         if ($this->reserva->repeat_days && $this->reserva->repeat_until) {
             // Parse initial date with format detection
