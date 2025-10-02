@@ -476,9 +476,16 @@ class ReservaController extends Controller
         }
         else{
             if($reserva->is_parent){
+                // Find new parent before deleting current one
+                $new_parent = Reserva::where('parent_id', $parent_id)
+                    ->where('id', '!=', $reserva->id)
+                    ->first();
+
                 $reserva->delete();
-                $new_parent_id = Reserva::firstWhere('parent_id', $parent_id)->id;
-                Reserva::where('parent_id', $parent_id)->update(['parent_id' => $new_parent_id]);
+
+                if($new_parent) {
+                    Reserva::where('parent_id', $parent_id)->update(['parent_id' => $new_parent->id]);
+                }
                 session()->put('alert-success', 'Reserva excluída com sucesso.');
             }else{
                 $reserva->delete();
