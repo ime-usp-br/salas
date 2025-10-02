@@ -10,11 +10,13 @@ use App\Models\Reserva;
 use App\Models\User;
 use App\Models\Sala;
 
-class DeleteReservaMail extends Mailable
+class DeleteReservaMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
-    private $reserva;
-    private $purge;
+
+    public $reserva;
+    public $irmaos;
+    public $purge;
 
     /**
      * Create a new message instance.
@@ -25,6 +27,11 @@ class DeleteReservaMail extends Mailable
     {
         $this->reserva = $reserva;
         $this->purge = $purge;
+
+        // Load siblings before they get deleted (for email display)
+        if ($purge && $reserva->parent_id) {
+            $this->irmaos = Reserva::where('parent_id', $reserva->parent_id)->get();
+        }
     }
 
     /**
@@ -34,13 +41,11 @@ class DeleteReservaMail extends Mailable
      */
     public function build()
     {
-        $user = User::find($this->reserva->user_id);
         return $this->view('emails.delete_reserva')
                     ->subject('Exclusão de reserva — Sistema Reserva de Salas')
-                    ->to($user->email)
+                    ->to($this->reserva->user->email)
                     ->with([
-                        'reserva' => $this->reserva,
-                        'purge' => $this->purge
+                        'irmaos' => $this->irmaos
                     ]);
     }
 }

@@ -7,8 +7,8 @@
 
 @if($purge)
     <p><b>Datas:</b>
-    @foreach($reserva->irmaos() as $reserva)
-        {{$reserva->data}},
+    @foreach($irmaos as $irmao)
+        {{$irmao->data}},
     @endforeach
     <p>
 @else
