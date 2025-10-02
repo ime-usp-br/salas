@@ -16,7 +16,18 @@ class SalasLivresController extends Controller
     //pega as reservas que não estão ocupadas nos horários solicitados
     public function search(SalaLivreRequest $request)
     {
-        $salas = Sala::SalasLivresQuery($request->validated());
+        $validated = $request->validated();
+
+        // Check if this is a recurring search
+        $isRecurring = !empty($validated['repeat_days']) &&
+                       !empty($validated['repeat_until']) &&
+                       is_array($validated['repeat_days']);
+
+        if ($isRecurring) {
+            $salas = Sala::SalasLivresRecurringQuery($validated);
+        } else {
+            $salas = Sala::SalasLivresQuery($validated);
+        }
 
         return response()->json($salas);
     }
