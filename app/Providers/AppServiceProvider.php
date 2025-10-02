@@ -8,6 +8,8 @@ use Illuminate\Pagination\Paginator;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Support\Facades\Mail;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -36,12 +38,18 @@ class AppServiceProvider extends ServiceProvider
         // Configure API Rate Limiters
         $this->configureRateLimiters();
 
-        if (config('mail.copiarRemetente'))
+        // Em desenvolvimento, redireciona todos os e-mails para o endereço de teste
+        if (config('mail.dev_test') && !app()->environment('production')) {
+            Mail::alwaysTo(config('mail.dev_test'));
+        }
+
+        if (config('mail.copiarRemetente')) {
             // faz com que todo e qualquer e-mail enviado para os diversos atores seja copiado para o e-mail de envio do sistema
             // desta forma, na caixa de entrada do e-mail de envio do sistema, teremos um histórico de todos os e-mails enviados
             Event::listen(MessageSending::class, function (MessageSending $event) {
                 $event->message->addBcc(config('mail.from.address'));
             });
+        }
     }
 
     /**
