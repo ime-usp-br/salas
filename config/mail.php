@@ -109,4 +109,7 @@ return [
 
     // se true, todo e-mail enviado será copiado para o endereço remetente do próprio sistema
     'copiarRemetente' => env('MAIL_COPIAR_REMETENTE', false),
+
+    // e-mail para testes em desenvolvimento - todos os e-mails serão redirecionados para este endereço
+    'dev_test' => env('MAIL_DEV_TEST'),
 ];
